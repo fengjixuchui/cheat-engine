@@ -387,6 +387,10 @@ typedef volatile struct tcpuinfo
   volatile struct tcpuinfo *next; //must be offset 0x8
   DWORD guest_error; //must be offset 0x10
   DWORD cpunr; //must be offset 0x14
+  QWORD lasttsc; //must be offset 0x18
+  QWORD totaltsctaken; //must be offset 0x20
+  QWORD lastTSCTouch;
+  QWORD lowestTSC;
   DWORD active;
   DWORD apicid;
 
@@ -580,6 +584,7 @@ typedef volatile struct tcpuinfo
 
   PEPT_PTE *eptWatchList; //pointer to the EPT entry of the index related to the WatchList
   int eptWatchListLength;
+  int eptUpdated;
 
 
   struct //single stepping data
@@ -591,6 +596,14 @@ typedef volatile struct tcpuinfo
     int ReasonsLength;
   } singleStepping;
 
+#ifdef STATISTICS
+  int eventcounter[56];
+#endif
+
+  struct {
+    UINT64 RFLAGS, CR4;
+    WORD CS, SS;
+  } SwitchKernel;
 
 } tcpuinfo, *pcpuinfo; //allocated when the number of cpu's is known
 
@@ -671,6 +684,8 @@ typedef struct _regCR4
 #define CR4_FSGSBASE    (1<<16)
 #define CR4_PCIDE       (1<<17)
 #define CR4_OSXSAVE     (1<<18)
+#define CR4_SMEP		(1<<20)
+#define CR4_SMAP		(1<<21)
 
 #define CR0_PE          (1<<0)
 #define CR0_NE          (1<<5)

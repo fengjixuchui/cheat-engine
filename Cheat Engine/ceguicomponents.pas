@@ -259,7 +259,7 @@ type TCEListBox=class(TCustomListBox)
     property OnDblClick;
   //  property OnDragDrop;
   //  property OnDragOver;
- //   property OnDrawItem;
+    property OnDrawItem;
     property OnEnter;
   //  property OnEndDrag;
     property OnExit;
@@ -328,7 +328,7 @@ published
   property OnDblClick;
 ////  property OnDragDrop;
  // property OnDragOver;
- // property OnDrawItem;
+  property OnDrawItem;
 //  property OnEndDrag;
   property OnDropDown;
   property OnEditingDone;
@@ -533,6 +533,9 @@ type TCEToggleBox=class(TToggleBox); //there is no custom...
 
 
 type TCEEdit=class(TCustomEdit)
+  private
+    fTextHintFontColor: TColor;
+    fTextHintFontStyle: TFontStyle;
   public
     property AutoSelected;
   published
@@ -596,8 +599,8 @@ type TCEEdit=class(TCustomEdit)
     property SelText;
 
     property TextHint;
-    property TextHintFontColor;
-    property TextHintFontStyle;
+    property TextHintFontColor: Tcolor read fTextHintFontColor write fTextHintFontColor;
+    property TextHintFontStyle: TFontStyle read fTextHintFontStyle write fTextHintFontStyle;
   end;
 
 type TCEForm=class(TCustomForm)
@@ -975,7 +978,7 @@ end;
 
 implementation
 
-uses luahandler,luacaller, formdesignerunit;
+uses luahandler,luacaller, formdesignerunit, CheckLst;
 
 resourcestring
   rsInvalidFormData = 'Invalid formdata';
@@ -1424,9 +1427,9 @@ begin
   if active then
   begin
     if color<>clDefault then
-      DesignPaintGrid(Canvas, ClientRect, ColorToRGB(color), InvertColor(ColorToRGB(color)))
+      DesignPaintGrid(Canvas, ClientRect, ColorToRGB(color), InvertColor(ColorToRGB(color)), scalex(8,96))
     else
-      DesignPaintGrid(Canvas, ClientRect);
+      DesignPaintGrid(Canvas, ClientRect, clBtnFace,clBlack, scalex(8,96));
   end;
 end;
 
@@ -1568,6 +1571,7 @@ initialization
   RegisterClass(TPageControl);
   RegisterClass(TTrayIcon);
   registerclass(TStatusBar);
+  registerclass(TCheckListBox);
 
 
   RegisterPropertyEditor(ClassTypeInfo(TListItems), TCEListView, 'Items', TCEListViewItemsPropertyEditor);
@@ -1592,8 +1596,6 @@ initialization
   RegisterPropertyEditor(TypeInfo(TContextPopupEvent), nil, '', THiddenPropertyEditor);
   RegisterPropertyEditor(TypeInfo(TTVCreateNodeClassEvent), nil, '', THiddenPropertyEditor);
   RegisterPropertyEditor(TypeInfo(TTVCustomCreateNodeEvent), nil, '', THiddenPropertyEditor);
-  RegisterPropertyEditor(TypeInfo(TTVCustomDrawEvent), nil, '', THiddenPropertyEditor);
-  RegisterPropertyEditor(TypeInfo(TTVCustomDrawItemEvent), nil, '', THiddenPropertyEditor);
   RegisterPropertyEditor(TypeInfo(TTVExpandedEvent), nil, '', THiddenPropertyEditor);
   RegisterPropertyEditor(TypeInfo(TTVEditedEvent), nil, '', THiddenPropertyEditor);
   RegisterPropertyEditor(TypeInfo(TTVEditingEvent), nil, '', THiddenPropertyEditor);

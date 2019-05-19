@@ -16,7 +16,8 @@ interface
 uses windows, FileUtil, LCLIntf,sysutils, classes,ComCtrls,dialogs, NewKernelHandler,math,
      SyncObjs, windows7taskbar,SaveFirstScan, savedscanhandler, autoassembler,
      symbolhandler, CEFuncProc,shellapi, customtypehandler,lua,lualib,lauxlib,
-     LuaHandler, fileaccess, groupscancommandparser, commonTypeDefs, LazUTF8, forms, LazFileUtils;
+     LuaHandler, fileaccess, groupscancommandparser, commonTypeDefs, LazUTF8,
+     forms, LazFileUtils, LCLProc, LCLVersion;
 {$define customtypeimplemented}
 {$endif}
 
@@ -2703,7 +2704,7 @@ begin
       result:=(RoundTo(psingle(newvalue)^,-floataccuracy)=svalue);
 
     rtExtremerounded:
-      result:=(psingle(newvalue)^>minsvalue) and (psingle(newvalue)^<maxsvalue);
+      result:=(psingle(newvalue)^>=minsvalue) and (psingle(newvalue)^<=maxsvalue);
 
     rtTruncated:
       result:=(psingle(newvalue)^>=svalue) and (psingle(newvalue)^<maxsvalue);
@@ -5006,7 +5007,7 @@ var i: integer;
     x: ptruint;
 
     currentbase: ptruint;
-    size: dword;
+    size, _size: dword;
     actualread: ptrUint;
     memorybuffer: ^byte;
     toread: dword;
@@ -5078,9 +5079,14 @@ begin
         actualread:=0;
         //variablesize:=0;
         if size<toread then
-          ReadProcessMemory(phandle,pointer(currentbase),memorybuffer,size+variablesize-1,actualread)  //+variablesize for overlap, only when not unknown var
+          _size:=size+variablesize-1
         else
-          ReadProcessMemory(phandle,pointer(currentbase),memorybuffer,size,actualread);
+          _size:=size;
+
+        ReadProcessMemory(phandle,pointer(currentbase),memorybuffer,_size,actualread);
+
+        //sanitize the results
+        if actualread>_size then actualread:=_size;
 
         if scanOption=soUnknownValue then
         begin
@@ -5132,6 +5138,7 @@ begin
     lastpart:=103;
 
     if (scanOption<>soUnknownValue) then flushroutine; //save results
+    lastpart:=104;
   finally
     {$ifdef LOWMEMORYUSAGE}
     if previousmemoryfile<>nil then
@@ -5143,8 +5150,6 @@ begin
     if (scanOption<>soUnknownValue) and (memorybuffer<>nil) then
       virtualfree(memorybuffer,0,MEM_RELEASE);
     {$endif}
-
-
   end;
 end;
 
@@ -5175,7 +5180,9 @@ begin
     end;
 
     //tell scanwriter to stop
+    lastpart:=2;
     scanwriter.flush;
+    lastpart:=3;
 
     if scanwriter.writeError then
       raise exception.Create(Format(rsDiskWriteError, [scanwriter.errorString]));
@@ -5186,6 +5193,12 @@ begin
       errorstring:=rsThread+inttostr(scannernr)+':'+e.message+' ('+inttostr(lastpart)+')';
 
       log('Scanner exception:'+errorstring);
+
+
+      {$if lcl_fullversion < 2000000}
+      DebugLn('Scanner exception:'+errorstring);
+      DumpExceptionBackTrace;
+      {$endif}
 
       //tell all siblings to terminate, something messed up
       //and I can just do this, since the ScanController is waiting for us, and terminate is pretty much atomic

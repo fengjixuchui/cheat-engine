@@ -19,6 +19,7 @@ type
     btnExecute: TButton;
     FindDialog1: TFindDialog;
     GroupBox1: TGroupBox;
+    leImageList: TImageList;
     MenuItem12: TMenuItem;
     MenuItem13: TMenuItem;
     miAutoComplete: TMenuItem;
@@ -113,6 +114,7 @@ type
     hintwindow:THintWindow;
     continuemethod: integer;
     AutoCompleteStartLine: string;
+    adjustedsize: boolean;
     procedure ContinueAutoComplete;
     procedure ContinueAutoComplete2(Sender: TObject);
   public
@@ -127,7 +129,7 @@ implementation
 
 { TfrmLuaEngine }
 
-uses luaclass, SynEditTypes;
+uses luaclass, SynEditTypes, globals, DPIHelper;
 
 resourcestring
   rsError = 'Script Error';
@@ -179,7 +181,15 @@ begin
     t.interval:=1;
     t.OnTimer:=ContinueAutoComplete2;
     t.enabled:=true;
-  end;
+  end
+  else
+  if keychar='(' then
+    value:=value+'('
+  else
+  if keychar='=' then
+    value:=value+'=';
+
+
 end;
 
 function ParseStringForPath(s: string; var extra: string): string;
@@ -1290,10 +1300,18 @@ begin
 end;
 
 procedure TfrmLuaEngine.FormCreate(Sender: TObject);
-var x: array of integer;
+var
+  x: array of integer;
+  fq: TFontQuality;
 begin
+
   synhighlighter:=TSynLuaSyn.Create(self);
   mscript.Highlighter:=synhighlighter;
+
+  fq:=mscript.Font.Quality;
+  if not (fq in [fqCleartypeNatural, fqDefault]) then
+    mscript.Font.quality:=fqDefault;
+
 
   setlength(x,1);
   if LoadFormPosition(self, x) then
@@ -1328,9 +1346,22 @@ end;
 procedure TfrmLuaEngine.FormShow(Sender: TObject);
 var i: integer;
 begin
+  if overridefont<>nil then
+    mScript.font.size:=overridefont.size
+  else
+    mScript.font.size:=10;
+
   i:=GetFontData(font.reference.handle).Height;
   if i<mScript.Font.Height then
     mScript.Font.Height:=i;
+
+  if adjustedSize=false then
+  begin
+    dpihelper.AdjustToolbar(tbDebug);
+    AdjustImageList(ilSyneditDebug);
+    adjustedSize:=true;
+  end;
+
 end;
 
 

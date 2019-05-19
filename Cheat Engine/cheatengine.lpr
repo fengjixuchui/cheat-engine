@@ -8,8 +8,8 @@ uses
   cthreads,
   {$ENDIF}{$ENDIF}
   Interfaces, {CEInterfaces,} // this includes the LCL widgetset
-  controls, sysutils, Forms, LazUTF8, dialogs, MainUnit, CEDebugger,
-  NewKernelHandler, CEFuncProc, ProcessHandlerUnit, symbolhandler,
+  controls, sysutils, Forms, LazUTF8, dialogs, SynCompletion, MainUnit,
+  CEDebugger, NewKernelHandler, CEFuncProc, ProcessHandlerUnit, symbolhandler,
   Assemblerunit, hypermode, byteinterpreter, addressparser, autoassembler,
   ProcessWindowUnit, MainUnit2, Filehandler, dbvmPhysicalMemoryHandler,
   frameHotkeyConfigUnit, formsettingsunit, HotkeyHandler, formhotkeyunit,
@@ -100,7 +100,9 @@ uses
   LuaManualModuleLoader, symbolhandlerstructs, frmOpenFileAsProcessDialogUnit,
   BetterDLLSearchPath, UnexpectedExceptionsHelper, frmExceptionRegionListUnit,
   frmExceptionIgnoreListUnit, frmcodefilterunit, CodeFilterCallOrAllDialog,
-  frmBranchMapperUnit;
+  frmBranchMapperUnit, frmSymbolEventTakingLongUnit, LuaCheckListBox,
+  textrender, diagramtypes, diagramlink, diagramblock, diagram, LuaDiagram,
+  LuaDiagramBlock, LuaDiagramLink;
 
 {$R cheatengine.res}
 {$R manifest.res}  //lazarus now has this build in (but sucks as it explicitly turns of dpi aware)
@@ -223,14 +225,15 @@ type TFormFucker=class
     procedure addFormEvent(Sender: TObject; Form: TCustomForm);
 end;
 
-var overridefont: TFont;
+
 procedure TFormFucker.addFormEvent(Sender: TObject; Form: TCustomForm);
 begin
   //fuuuuucking time
   if (form<>nil) and (overridefont<>nil) then
-    form.Font:=overridefont;
-
-
+  begin
+    if (form is TsynCompletionForm)=false then   //dus nut wurk with this
+      form.Font:=overridefont;
+  end;
 end;
 
 
@@ -241,11 +244,13 @@ var
   r: TRegistry;
 
   path: string;
+  noautorun: boolean;
 begin
-  Application.Title:='Cheat Engine 6.8.2';
+  Application.Title:='Cheat Engine 6.8.x';
   Application.Initialize;
 
   overridefont:=nil;
+  noautorun:=false;
 
   getcedir;
   doTranslation;
@@ -306,6 +311,9 @@ begin
       except
       end;
     end;
+
+    if uppercase(ParamStr(i))='NOAUTORUN' then  //don't load any extentions yet
+      noautorun:=true;
   end;
 
 
@@ -321,7 +329,7 @@ begin
   Application.CreateForm(TTypeForm, TypeForm);
 
   initcetitle;
-  InitializeLuaScripts;
+  InitializeLuaScripts(noautorun);
 
   handleparameters;
 

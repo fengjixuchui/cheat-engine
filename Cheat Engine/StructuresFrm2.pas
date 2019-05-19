@@ -329,6 +329,7 @@ type
 
   TfrmStructures2 = class(TForm)
     FindDialog1: TFindDialog;
+    sdImageList: TImageList;
     miCommonalityScan: TMenuItem;
     MenuItem5: TMenuItem;
     MenuItem6: TMenuItem;
@@ -710,6 +711,8 @@ resourcestring
   rsPointer = 'Pointer';
   rsByteWithValue = 'Byte: %s';
   rs2ByteWithValue2 = '2 Byte: %s';
+  rsWarnAboutLessThan2Addresses = 'It''s not recommended to run the structure '
+    +'compare with just one address in a group';
 
 
 var
@@ -4702,7 +4705,7 @@ end;
 
 procedure TfrmStructures2.miViewClick(Sender: TObject);
 begin
-  if (groupcount>=2) and (group[0].columnCount>1) and (group[1].columnCount>1) then
+  if (groupcount>=2) and (group[0].columnCount>=1) and (group[1].columnCount>=1) then
   begin
     miSeperatorCommonalityScanner.visible:=true;
     miCommonalityScan.visible:=true;
@@ -4718,6 +4721,9 @@ var
 begin
   if groupcount>=2 then
   begin
+    if (group[0].columnCount<2) or (group[1].columnCount<2) then
+      messagedlg(rsWarnAboutLessThan2Addresses, mtWarning, [mbok], 0);
+
     if frmStructureCompare<>nil then
       f:=TfrmStructureCompare.Create(application)
     else

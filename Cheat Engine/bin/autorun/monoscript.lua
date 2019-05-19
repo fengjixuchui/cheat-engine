@@ -847,7 +847,7 @@ function mono_class_findInstancesOfClass(domain, klass, OnScanDone, ProgressBar)
         miDissectStruct.Shortcut='Ctrl+D'
         miDissectStruct.OnClick=function(m)
           --
-          local n=sender.Selected
+          local n=tv.Selected
           
           if n then
             while n.level>0 do --get the parent
@@ -868,7 +868,7 @@ function mono_class_findInstancesOfClass(domain, klass, OnScanDone, ProgressBar)
         miInvokeMethod.Shortcut='Ctrl+I'
         miInvokeMethod.OnClick=function(m)        
           --show the methodlist
-          local n=sender.Selected
+          local n=tv.Selected
           
           if n then
             while n.level>0 do --get the parent
@@ -3373,7 +3373,95 @@ function monoAA_GETMONOSTATICDATA(assemblyname, namespace, classname, symbolpref
   -- Populates ###.Static and ###.Class where ### the symbol prefix
   local script_tmpl
   if enable then
-    script_tmpl = [===[
+    if targetIs64Bit() then
+      script_tmpl = [===[
+label($SYMCLASSNAME$.threadexit)
+label(classname)
+label(namespace)
+label(assemblyname)
+label(status)
+label(domain)
+label(assembly)
+label($SYMCLASSNAME$.Static)
+label($SYMCLASSNAME$.Class)
+alloc($SYMCLASSNAME$.threadstart, 2048, mono.mono_thread_attach)
+
+registersymbol($SYMCLASSNAME$.Static)
+registersymbol($SYMCLASSNAME$.Class)
+
+$SYMCLASSNAME$.threadstart:
+sub rsp,28
+
+xor rax,rax
+mov [$SYMCLASSNAME$.Class],rax
+mov [$SYMCLASSNAME$.Static],rax
+
+call mono.mono_get_root_domain
+cmp rax,0
+je $SYMCLASSNAME$.threadexit
+mov [domain],rax
+
+mov rcx,[domain]
+call mono.mono_thread_attach
+
+mov rcx,assemblyname
+mov rdx,status
+call mono.mono_assembly_load_with_partial_name
+cmp rax,0
+je $SYMCLASSNAME$.threadexit
+
+mov rcx,rax
+call mono.mono_assembly_get_image
+cmp rax,0
+je $SYMCLASSNAME$.threadexit
+mov [assembly], rax
+
+mov rcx,eax
+mov rdx,namespace
+mov r8,classname
+
+call mono.mono_class_from_name_case
+cmp rax,0
+je $SYMCLASSNAME$.threadexit
+mov [$SYMCLASSNAME$.Class],rax
+
+mov rcx,[domain]
+mov rdx,rax
+call mono.mono_class_vtable
+cmp rax,0
+je $SYMCLASSNAME$.threadexit
+
+mov rcx,rax
+call mono.mono_vtable_get_static_field_data
+
+mov [$SYMCLASSNAME$.Static],rax
+jmp $SYMCLASSNAME$.threadexit
+///////////////////////////////////////////////////////
+// Data section
+$SYMCLASSNAME$.Static:
+dq 0
+$SYMCLASSNAME$.Class:
+dq 0
+assemblyname:
+db '$ASSEMBLYNAME$',0
+namespace:
+db '$NAMESPACE$',0
+classname:
+db '$CLASSNAME$',0
+status:
+dq 0
+domain:
+dq 0
+assembly:
+dq 0
+
+$SYMCLASSNAME$.threadexit:
+add rsp,28
+ret
+createthread($SYMCLASSNAME$.threadstart)
+]===]
+    else
+      script_tmpl = [===[
 label($SYMCLASSNAME$.threadexit)
 label(classname)
 label(namespace)
@@ -3458,6 +3546,7 @@ $SYMCLASSNAME$.threadexit:
 ret
 createthread($SYMCLASSNAME$.threadstart)
 ]===]
+    end
   else
     script_tmpl = [===[
 unregistersymbol($SYMCLASSNAME$.Static)

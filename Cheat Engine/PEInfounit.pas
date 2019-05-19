@@ -21,6 +21,7 @@ type
 
   TfrmPEInfo = class(TForm)
     GroupBox2: TGroupBox;
+    peiImageList: TImageList;
     miCopyTab: TMenuItem;
     miCopyEverything: TMenuItem;
     Panel1: TPanel;
@@ -75,7 +76,7 @@ function peinfo_getheadersize(header: pointer): dword;
 
 implementation
 
-uses processhandlerunit, parsers;
+uses processhandlerunit, parsers, DPIHelper;
 
 resourcestring
   rsThisIsNotAValidImage = 'This is not a valid image';
@@ -678,7 +679,7 @@ begin
               begin
                 importaddress:=ptrUint(loadedmodule)+ImageImportDirectory.FirstThunk+8*k;
 
-                if InRangeX(importaddress, ptrUint(loadedmodule), ptrUint(loadedmodule)+memorycopysize) then
+                if InRangeX(importaddress, ptrUint(loadedmodule), ptrUint(loadedmodule)+maxaddress) then
                 begin
 
                   if loaded then
@@ -697,12 +698,16 @@ begin
                   else
                   begin
                     //get the name from the file
-                    tempaddress:=ptrUint(loadedmodule)+pqwordarray(ptrUint(loadedmodule)+ImageImportDirectory.FirstThunk)[k]+2;
-                    if InRangeX(tempaddress, ptruint(loadedmodule), ptruint(loadedmodule)+memorycopysize-100) then
+//                  tempaddress:=ptrUint(loadedmodule)+pqwordarray(ptrUint(loadedmodule)+ImageImportDirectory.FirstThunk)[k]+2;
+                    tempaddress:=ptrUint(loadedmodule)+pqwordarray(ptrUint(loadedmodule)+ImageImportDirectory.characteristicsOrFirstThunk)[k]+2;
+
+                    if InRangeX(tempaddress, ptruint(loadedmodule), ptruint(loadedmodule)+maxaddress-100) then
                     begin
                       setlength(importfunctionname, 100);
                       CopyMemory(@importfunctionname[1], pointer(tempaddress), 99);
                       importfunctionname[99]:=#0;
+                      s:=pchar(@importfunctionname[1]);
+                      importfunctionname:=s;
                     end
                     else
                       importfunctionname:='err';
@@ -1022,6 +1027,8 @@ begin
     modulelist.ItemIndex:=0;
     modulelist.OnClick(modulelist);
   end;
+
+  DPIHelper.AdjustSpeedButtonSize(LoadButton);
 end;
 
 procedure TfrmPEInfo.Button1Click(Sender: TObject);
@@ -1041,7 +1048,7 @@ begin
 
   if loadedmodule<>nil then
   begin
-    virtualfree(loadedmodule,0,MEM_RELEASE	);
+    virtualfree(loadedmodule,0,MEM_RELEASE);
     loadedmodule:=nil;
   end;
 

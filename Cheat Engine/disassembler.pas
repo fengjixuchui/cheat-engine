@@ -1911,7 +1911,7 @@ begin
         end;
 
         memory:=@memory[bytestomove];
-        inc(offset,2);
+        inc(offset,bytestomove);
       end;
 
       case opcodeflags.pp of
@@ -2016,7 +2016,7 @@ begin
                 begin
                   lastdisassembledata.parametervaluetype:=dvtvalue;
                   lastdisassembledata.parametervalue:=dwordptr^;
-                  lastdisassembledata.parameters:=colorreg+'rax'+endcolor+','+inttohexs(dwordptr^,8);
+                  lastdisassembledata.parameters:=colorreg+'rax'+endcolor+','+inttohexs(longint(dwordptr^),8);
 
                   description:='add '+inttohex(dwordptr^,8)+' to rax (sign extended)';
                 end
@@ -2112,11 +2112,11 @@ begin
 
                 if rex_w then
                 begin
-                  lastdisassembledata.parameters:=colorreg+'rax'+endcolor+','+inttohexs(lastdisassembledata.parametervalue,4);
+                  lastdisassembledata.parameters:=colorreg+'rax'+endcolor+','+inttohexs(longint(lastdisassembledata.parametervalue),8);
                   description:=description+' (sign-extended)';
                 end
                 else
-                  lastdisassembledata.parameters:=colorreg+'eax'+endcolor+','+inttohexs(lastdisassembledata.parametervalue,4);
+                  lastdisassembledata.parameters:=colorreg+'eax'+endcolor+','+inttohexs(lastdisassembledata.parametervalue,8);
 
 
                 lastdisassembledata.seperators[lastdisassembledata.seperatorcount]:=1;
@@ -10064,7 +10064,7 @@ begin
                 lastdisassembledata.parametervalue:=dwordptr^;
 
                 if rex_w then
-                  lastdisassembledata.parameters:=colorreg+'rax'+endcolor+','+inttohexs(lastdisassembledata.parametervalue,8)
+                  lastdisassembledata.parameters:=colorreg+'rax'+endcolor+','+inttohexs(longint(lastdisassembledata.parametervalue),8)
                 else
                   lastdisassembledata.parameters:=colorreg+'eax'+endcolor+','+inttohexs(lastdisassembledata.parametervalue,8);
                 inc(offset,4);
@@ -10156,7 +10156,7 @@ begin
                 lastdisassembledata.parametervalue:=dwordptr^;
 
                 if rex_w then
-                  lastdisassembledata.parameters:=colorreg+'rax'+endcolor+','+inttohexs(lastdisassembledata.parametervalue,8)
+                  lastdisassembledata.parameters:=colorreg+'rax'+endcolor+','+inttohexs(longint(lastdisassembledata.parametervalue),8)
                 else
                   lastdisassembledata.parameters:=colorreg+'eax'+endcolor+','+inttohexs(lastdisassembledata.parametervalue,8);
 
@@ -10251,7 +10251,7 @@ begin
                 lastdisassembledata.parametervalue:=dwordptr^;
 
                 if rex_w then
-                  lastdisassembledata.parameters:=colorreg+'rax'+endcolor+','+inttohexs(lastdisassembledata.parametervalue,8)
+                  lastdisassembledata.parameters:=colorreg+'rax'+endcolor+','+inttohexs(longint(lastdisassembledata.parametervalue),8)
                 else
                   lastdisassembledata.parameters:=colorreg+'eax'+endcolor+','+inttohexs(lastdisassembledata.parametervalue,8);
                 inc(offset,4);
@@ -10337,8 +10337,9 @@ begin
                 lastdisassembledata.parametervaluetype:=dvtvalue;
                 lastdisassembledata.parametervalue:=dwordptr^;
 
+
                 if rex_w then
-                  lastdisassembledata.parameters:=colorreg+'rax'+endcolor+','+inttohexs(dwordptr^,8)
+                  lastdisassembledata.parameters:=colorreg+'rax'+endcolor+','+IntToHexs(longint(dwordptr^),8)
                 else
                   lastdisassembledata.parameters:=colorreg+'eax'+endcolor+','+inttohexs(dwordptr^,8);
                 inc(offset,4);
@@ -10422,7 +10423,7 @@ begin
                 lastdisassembledata.parametervalue:=dwordptr^;
 
                 if rex_w then
-                  lastdisassembledata.parameters:=colorreg+'rax'+endcolor+','+inttohexs(dwordptr^,8)
+                  lastdisassembledata.parameters:=colorreg+'rax'+endcolor+','+inttohexs(longint(dwordptr^),8)
                 else
                   lastdisassembledata.parameters:=colorreg+'eax'+endcolor+','+inttohexs(dwordptr^,8);
                 inc(offset,4);
@@ -10510,7 +10511,7 @@ begin
 
 
                 if rex_w then
-                  lastdisassembledata.parameters:=colorreg+'rax'+endcolor+','+inttohexs(qword(integer(dwordptr^)),8)
+                  lastdisassembledata.parameters:=colorreg+'rax'+endcolor+','+inttohexs(longint(dwordptr^),8)
                 else
                   lastdisassembledata.parameters:=colorreg+'eax'+endcolor+','+inttohexs(dwordptr^,8);
                 inc(offset,4);
@@ -10642,7 +10643,10 @@ begin
                 lastdisassembledata.parametervalue:=dwordptr^;
 
                 lastdisassembledata.opcode:='push';
-                lastdisassembledata.parameters:=inttohexs(dwordptr^,8);
+                if processhandler.is64Bit then
+                  lastdisassembledata.parameters:=inttohexs(longint(dwordptr^),8)
+                else
+                  lastdisassembledata.parameters:=inttohexs(dwordptr^,8);
                 inc(offset,4);
               end;
               description:='push word or doubleword onto the stack (sign extended)';
@@ -10666,7 +10670,10 @@ begin
                 lastdisassembledata.opcode:='imul';
                 lastdisassembledata.parameters:=r32(memory[1])+modrm(memory,prefix2,1,0,last,mRight);
                 dwordptr:=@memory[last];
-                lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(dwordptr^,8);
+                if rex_w then
+                  lastdisassembledata.parameters:=lastdisassembledata.parameters+','+inttohexs(longint(dwordptr^),8)
+                else
+                  lastdisassembledata.parameters:=lastdisassembledata.parameters+','+inttohexs(dwordptr^,8);
 
                 lastdisassembledata.parametervaluetype:=dvtvalue;
                 lastdisassembledata.parametervalue:=dwordptr^;
@@ -10698,7 +10705,7 @@ begin
                 lastdisassembledata.parameters:=r32(memory[1])+modrm(memory,prefix2,1,0,last,mRight);
 
               lastdisassembledata.parametervalue:=memory[last];
-              lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(memory[last],2);
+              lastdisassembledata.parameters:=lastdisassembledata.parameters+','+inttohexs(memory[last],2);
               inc(offset,last-1+1);
             end;
 
@@ -11233,7 +11240,10 @@ begin
                         lastdisassembledata.parametervaluetype:=dvtvalue;
                         lastdisassembledata.parametervalue:=dwordptr^;
 
-                        lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(dwordptr^,8);
+                        if Rex_W then
+                          lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(longint(dwordptr^),8)
+                        else
+                          lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(dwordptr^,8);
                         inc(offset,last-1+4);
                       end;
 
@@ -11264,7 +11274,10 @@ begin
                         lastdisassembledata.parametervaluetype:=dvtvalue;
                         lastdisassembledata.parametervalue:=dwordptr^;
 
-                        lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(dwordptr^,8);
+                        if Rex_W then
+                          lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(longint(dwordptr^),8)
+                        else
+                          lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(dwordptr^,8);
                         inc(offset,last-1+4);
                       end;
 
@@ -11295,7 +11308,10 @@ begin
                         lastdisassembledata.parametervaluetype:=dvtvalue;
                         lastdisassembledata.parametervalue:=dwordptr^;
 
-                        lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(dwordptr^,8);
+                        if Rex_W then
+                          lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(longint(dwordptr^),8)
+                        else
+                          lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(dwordptr^,8);
                         inc(offset,last-1+4);
                       end;
 
@@ -11325,7 +11341,10 @@ begin
                         lastdisassembledata.parametervaluetype:=dvtvalue;
                         lastdisassembledata.parametervalue:=dwordptr^;
 
-                        lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(dwordptr^,8);
+                        if Rex_W then
+                          lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(longint(dwordptr^),8)
+                        else
+                          lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(dwordptr^,8);
                         inc(offset,last-1+4);
                       end;
 
@@ -11357,7 +11376,10 @@ begin
                         lastdisassembledata.parametervaluetype:=dvtvalue;
                         lastdisassembledata.parametervalue:=dwordptr^;
 
-                        lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(dwordptr^,8);
+                        if Rex_W then
+                          lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(longint(dwordptr^),8)
+                        else
+                          lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(dwordptr^,8);
                         inc(offset,last-1+4);
                       end;
 
@@ -11387,7 +11409,10 @@ begin
                         lastdisassembledata.parametervaluetype:=dvtvalue;
                         lastdisassembledata.parametervalue:=dwordptr^;
 
-                        lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(dwordptr^,8);
+                        if Rex_W then
+                          lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(longint(dwordptr^),8)
+                        else
+                          lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(dwordptr^,8);
                         inc(offset,last-1+4);
                       end;
 
@@ -11417,7 +11442,10 @@ begin
                         lastdisassembledata.parametervaluetype:=dvtvalue;
                         lastdisassembledata.parametervalue:=dwordptr^;
 
-                        lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(dwordptr^,8);
+                        if Rex_W then
+                          lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(longint(dwordptr^),8)
+                        else
+                          lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(dwordptr^,8);
                         inc(offset,last-1+4);
                       end;
                       description:='logical exclusive or';
@@ -11446,8 +11474,8 @@ begin
                         lastdisassembledata.parametervaluetype:=dvtvalue;
                         lastdisassembledata.parametervalue:=dwordptr^;
 
-                        if rex_w then
-                          lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(qword(integer(dwordptr^)),8)
+                        if Rex_W then
+                          lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(longint(dwordptr^),8)
                         else
                           lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(dwordptr^,8);
                         inc(offset,last-1+4);
@@ -12257,7 +12285,7 @@ begin
                 lastdisassembledata.parametervalue:=dwordptr^;
 
                 if rex_w then
-                  lastdisassembledata.parameters:=colorreg+'rax'+endcolor+','+inttohexs(dwordptr^,8)
+                  lastdisassembledata.parameters:=colorreg+'rax'+endcolor+','+inttohexs(longint(dwordptr^),8)
                 else
                   lastdisassembledata.parameters:=colorreg+'eax'+endcolor+','+inttohexs(dwordptr^,8);
                 inc(offset,4);
@@ -12766,7 +12794,12 @@ begin
                       lastdisassembledata.parametervaluetype:=dvtvalue;
                       lastdisassembledata.parametervalue:=dwordptr^;
 
-                      lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(dwordptr^,8);
+
+                      if rex_w then
+                        lastdisassembledata.parameters:=lastdisassembledata.parameters+IntToHexs(longint(dwordptr^),8)
+                      else
+                        lastdisassembledata.parameters:=lastdisassembledata.parameters+IntToHexs(dwordptr^,8);
+
                       inc(offset,last+3);
                     end;
                   end;
@@ -14793,7 +14826,10 @@ begin
                         dwordptr:=@memory[last];
                         lastdisassembledata.parametervaluetype:=dvtaddress;
                         lastdisassembledata.parametervalue:=dwordptr^;
-                        lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(dwordptr^,4);
+                        if rex_w then
+                          lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(longint(dwordptr^),8)
+                        else
+                          lastdisassembledata.parameters:=lastdisassembledata.parameters+inttohexs(dwordptr^,8);
                         inc(offset,last+3);
                       end;
                     end;
@@ -14978,6 +15014,9 @@ begin
                           if (memory[1]=$15) and (pdword(@memory[2])^=2) and (pword(@memory[6])^=$8eb) then //special 16 byte call
                           begin
                             lastdisassembledata.parameters:=inttohexs(pqword(@memory[8])^,8);
+                            LastDisassembleData.parameterValue:=pqword(@memory[8])^;
+                            LastDisassembleData.parameterValueType:=dvtAddress;
+
                             inc(last,8+4+2+2);
 
                             LastDisassembleData.Seperators[0]:=2;
@@ -15554,7 +15593,7 @@ begin
       end;
 
 
-      s:=symhandler.getNameFromAddress(jumpAddress);
+      s:=symhandler.getNameFromAddress(jumpAddress, symhandler.showsymbols, symhandler.showmodules,nil,nil,8,false);
       if pos(s, LastDisassembleData.parameters)=0 then //no need to show a comment if it's exactly the same
         result:=result+'->'+s;
     end;
@@ -15841,13 +15880,13 @@ begin
 
                 if readprocessmemory(processhandle,pointer(value),@value,processhandler.Pointersize,actualread) then
                 begin
-                  ts:='->'+symhandler.getNameFromAddress(value);
+                  ts:='->'+symhandler.getNameFromAddress(value,symhandler.showsymbols, symhandler.showmodules,nil,nil,8,false);
                 end;
               end;
             end
             else
             begin
-              ts:=symhandler.getNameFromAddress(value);
+              ts:=symhandler.getNameFromAddress(value,symhandler.showsymbols, symhandler.showmodules,nil,nil,8,false);
             end;
 
 
@@ -15976,7 +16015,7 @@ begin
   if (showsymbols or showmodules) and (chars>=8) then
   begin
     found:=false;
-    result:=symhandler.getNameFromAddress(value,showsymbols, showmodules, nil, @found,chars);
+    result:=symhandler.getNameFromAddress(value,showsymbols, showmodules, nil, @found,chars, false);
 
     //when found, and the symbol contains a space or comma, put the symbolname in quotes
 

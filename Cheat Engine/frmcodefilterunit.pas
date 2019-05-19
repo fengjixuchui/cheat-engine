@@ -14,22 +14,24 @@ type
   { TfrmCodeFilter }
 
   TfrmCodeFilter = class(TForm)
+    btnCancel: TButton;
+    btnFilterOutExecutedAddresses: TButton;
+    btnFilterOutNonExecutedAddresses: TButton;
     btnLoadAddressesByDisassembling: TButton;
+    btnLoadAddressesFromFile: TButton;
     btnLoadAddressesFromTrace: TButton;
+    btnShowList: TButton;
     btnStart: TButton;
     btnStop: TButton;
-    btnCancel: TButton;
-    btnLoadAddressesFromFile: TButton;
-    btnFilterOutNonExecutedAddresses: TButton;
-    btnFilterOutExecutedAddresses: TButton;
-    btnShowList: TButton;
+    Button1: TButton;
     frmLaunchBranchMapper: TButton;
     GroupBox1: TGroupBox;
+    cfImageList: TImageList;
     Label1: TLabel;
-    lblStatus: TLabel;
-    lblAddressList: TLabel;
     Label3: TLabel;
     lblExecuteCount: TLabel;
+    lblStatus: TLabel;
+    lblAddressList: TLabel;
     lvResults: TListView;
     miSaveAddressList: TMenuItem;
     miClearList: TMenuItem;
@@ -38,6 +40,7 @@ type
     OpenDialog: TOpenDialog;
     Panel1: TPanel;
     Panel2: TPanel;
+    Panel3: TPanel;
     pnlStatus: TPanel;
     Panel4: TPanel;
     Panel5: TPanel;
@@ -52,6 +55,7 @@ type
     procedure btnShowListClick(Sender: TObject);
     procedure btnStartClick(Sender: TObject);
     procedure btnStopClick(Sender: TObject);
+    procedure Button1Click(Sender: TObject);
     procedure frmLaunchBranchMapperClick(Sender: TObject);
     procedure Button7Click(Sender: TObject);
     procedure FilterClick(Sender: TObject);
@@ -64,6 +68,7 @@ type
     procedure miDeleteSelectedItemsClick(Sender: TObject);
     procedure miClearListClick(Sender: TObject);
     procedure Panel2Click(Sender: TObject);
+    procedure Panel3Click(Sender: TObject);
     procedure pmResultsPopup(Sender: TObject);
     procedure Timer1Timer(Sender: TObject);
   private
@@ -250,7 +255,7 @@ begin
       begin
         frmCodeFilter.callMap.Delete(address);
 
-        if frmCodeFilter.breakpointsSet and (not bpinfo^.hasBeenExecuted=false) then //restore
+        if frmCodeFilter.breakpointsSet and (not bpinfo^.hasBeenExecuted) then //restore
           WriteProcessMemory(processhandle,pointer(address), @bpinfo^.originalByte,1,x);
 
         freemem(bpinfo);
@@ -380,6 +385,11 @@ end;
 //-------------------------------
 
 procedure TfrmCodeFilter.Panel2Click(Sender: TObject);
+begin
+
+end;
+
+procedure TfrmCodeFilter.Panel3Click(Sender: TObject);
 begin
 
 end;
@@ -668,6 +678,8 @@ begin
 
       lblAddressList.caption:=format(rsAddressList, [callmap.Count]);
       btnShowList.Click;
+
+      btnStart.enabled:=callmap.count>0;
     end;
   end;
 end;
@@ -720,6 +732,8 @@ begin
 
   lblAddressList.caption:=format(rsAddressList, [callmap.Count]);
   btnShowList.Click;
+
+  btnStart.enabled:=callmap.count>0;
 end;
 
 function TfrmCodeFilter.ModuleListSelectionListSelToText(index: integer; listText: string): string;
@@ -880,6 +894,8 @@ begin
 
     lblAddressList.caption:=format(rsAddressList, [callmap.Count]);
     btnShowList.Click;
+
+    btnStart.enabled:=callmap.count>0;
   end;
 end;
 
@@ -892,6 +908,11 @@ procedure TfrmCodeFilter.btnStopClick(Sender: TObject);
 begin
   nextfilter:=fNoFilter;
   disableAllBreakpoints;
+end;
+
+procedure TfrmCodeFilter.Button1Click(Sender: TObject);
+begin
+
 end;
 
 procedure TfrmCodeFilter.frmLaunchBranchMapperClick(Sender: TObject);

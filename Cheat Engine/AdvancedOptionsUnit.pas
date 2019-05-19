@@ -19,8 +19,8 @@ type
   { TAdvancedOptions }
 
   TAdvancedOptions = class(TForm)
-    Button2: TButton;
-    Button3: TButton;
+    aoImageList: TImageList;
+    miDBVMFindWhatCodeAccesses: TMenuItem;
     PopupMenu2: TPopupMenu;
     miReplaceWithNops: TMenuItem;
     miRestoreWithOriginal: TMenuItem;
@@ -38,7 +38,6 @@ type
     Button1: TButton;
     Panel2: TPanel;
     Pausebutton: TSpeedButton;
-    SaveButton: TSpeedButton;
     Label1: TLabel;
     N3: TMenuItem;
     Codelist2: TListView;
@@ -47,6 +46,7 @@ type
     procedure FormDestroy(Sender: TObject);
     procedure FormResize(Sender: TObject);
     procedure FormShow(Sender: TObject);
+    procedure miDBVMFindWhatCodeAccessesClick(Sender: TObject);
     procedure PopupMenu2Popup(Sender: TObject);
     procedure miRestoreWithOriginalClick(Sender: TObject);
     procedure miReplaceWithNopsClick(Sender: TObject);
@@ -307,6 +307,14 @@ begin
 
 end;
 
+procedure TAdvancedOptions.miDBVMFindWhatCodeAccessesClick(Sender: TObject);
+begin
+  try
+    MemoryBrowser.DBVMFindWhatThisCodeAccesses(symhandler.getAddressFromName(code[codelist2.ItemIndex].symbolname));
+  except
+  end;
+end;
+
 resourcestring
   strFindWhatCodeaccesses='Find out what addresses this code accesses';
   strFindWhatCodeReads='Find out what addresses this code reads from';
@@ -351,7 +359,7 @@ begin
       //if neither grey it out
 
       try
-        offset:=symhandler.getAddressFromName(code[codelist2.itemindex].symbolname);
+        offset:=symhandler.getAddressFromName(code[codelist2.itemindex].symbolname, false);
         opcode:=disassemble(offset,desc);
       except
         Findoutwhatthiscodechanges1.enabled:=false;
@@ -387,10 +395,15 @@ begin
       end;
 
 
+
+
+
       Findoutwhatthiscodechanges1.enabled:=true;
     end;
   end;
 
+  miDBVMFindWhatCodeAccesses.Enabled:=isIntel and isDBVMCapable and Findoutwhatthiscodechanges1.enabled;
+  miDBVMFindWhatCodeAccesses.Caption:='DBVM '+Findoutwhatthiscodechanges1.Caption;
 end;
 
 resourcestring strcouldntrestorecode='Error when trying to restore this code!';
@@ -626,8 +639,7 @@ end;
 
 procedure TAdvancedOptions.SaveButtonClick(Sender: TObject);
 begin
- (* StandAlone.filename:=SaveDialog1.filename;
-  standAlone.showmodal; *)
+
 end;
 
 procedure TAdvancedOptions.PausebuttonClick(Sender: TObject);
@@ -815,7 +827,6 @@ begin
   {$endif}
   {$endif}
 
-  savebutton.Visible:=false;
  // pausebutton.Left:=savebutton.Left;
 
   setlength(x,0);
@@ -838,11 +849,15 @@ begin
 
   if codelist2.itemindex<>-1 then
   begin
-    memorybrowser.disassemblerview.SelectedAddress:=symhandler.getAddressFromName(code[codelist2.itemindex].symbolname);
+    try
+      memorybrowser.disassemblerview.SelectedAddress:=symhandler.getAddressFromName(code[codelist2.itemindex].symbolname);
 
-    if memorybrowser.Height<(memorybrowser.Panel1.Height+100) then memorybrowser.height:=memorybrowser.Panel1.Height+100;
-    memorybrowser.panel1.visible:=true;
-    memorybrowser.show;
+      if memorybrowser.Height<(memorybrowser.Panel1.Height+100) then memorybrowser.height:=memorybrowser.Panel1.Height+100;
+      memorybrowser.panel1.visible:=true;
+      memorybrowser.show;
+
+    except
+    end;
   end;
 
 end;

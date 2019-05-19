@@ -1,6 +1,8 @@
 unit frmThreadlistunit;
 
 {$MODE Delphi}
+{$warn 4056 off}
+{$warn 4082 off}
 
 interface
 
@@ -17,8 +19,10 @@ type
   { TfrmThreadlist }
 
   TfrmThreadlist = class(TForm)
+    tlImageList: TImageList;
     lblIsWOW64: TLabel;
     MenuItem1: TMenuItem;
+    miCopyValueToClipboard: TMenuItem;
     miClearDebugRegisters: TMenuItem;
     miFreezeThread: TMenuItem;
     miResumeThread: TMenuItem;
@@ -32,8 +36,10 @@ type
     procedure MenuItem1Click(Sender: TObject);
     procedure miBreakClick(Sender: TObject);
     procedure miClearDebugRegistersClick(Sender: TObject);
+    procedure miCopyValueToClipboardClick(Sender: TObject);
     procedure miFreezeThreadClick(Sender: TObject);
     procedure miResumeThreadClick(Sender: TObject);
+    procedure PopupMenu1Popup(Sender: TObject);
     procedure threadTreeviewDblClick(Sender: TObject);
     procedure threadTreeviewExpanding(Sender: TObject; Node: TTreeNode;
       var AllowExpansion: Boolean);
@@ -50,7 +56,7 @@ var
 implementation
 
 uses debugeventhandler, frmstacktraceunit, DebuggerInterfaceAPIWrapper,
-  ProcessHandlerUnit, Parsers, symbolhandler;
+  ProcessHandlerUnit, Parsers, symbolhandler, Clipbrd;
 
 resourcestring
   rsPleaseFirstAttachTheDebuggerToThisProcess = 'Please first attach the debugger to this process';
@@ -382,6 +388,39 @@ begin
     raise exception.create(rsPleaseFirstAttachTheDebuggerToThisProcess);
 end;
 
+procedure TfrmThreadlist.miCopyValueToClipboardClick(Sender: TObject);
+var
+  s: string;
+  i: integer;
+
+  r: tstringlist;
+begin
+  if (threadTreeview.Selected<>nil) and (threadtreeview.Selected.Level=1) then
+  begin
+    if threadTreeview.SelectionCount>1 then
+    begin
+      r:=tstringlist.create;
+
+      for i:=0 to threadTreeview.Items.count-1 do
+        if threadTreeview.items[i].Selected then
+          r.add(threadTreeview.items[i].text);
+
+      Clipboard.AsText:=r.Text;
+      r.free;
+    end
+    else
+    begin
+      s:=threadTreeview.Selected.text;
+      i:=pos('=',s);
+      if i<>-1 then
+      begin
+        s:=copy(s,i+1,length(s));
+        Clipboard.AsText:=s;
+      end;
+    end;
+  end;
+end;
+
 procedure TfrmThreadlist.miFreezeThreadClick(Sender: TObject);
 var
   i: integer;
@@ -409,14 +448,14 @@ begin
           if TDebugThreadHandler(threadlist[i]).ThreadId=tid then
           begin
             SuspendThread(TDebugThreadHandler(threadlist[i]).handle);
-            break;
+            exit;
           end;
         end;
       finally
         debuggerthread.unlockThreadlist;
       end;
-    end
-    else
+    end;
+
     begin
       th:=OpenThread(THREAD_SUSPEND_RESUME, false, tid);
 
@@ -457,14 +496,14 @@ begin
           if TDebugThreadHandler(threadlist[i]).ThreadId=tid then
           begin
             ResumeThread(TDebugThreadHandler(threadlist[i]).handle);
-            break;
+            exit;
           end;
         end;
       finally
         debuggerthread.unlockThreadlist;
       end;
-    end
-    else
+    end;
+
     begin
       th:=OpenThread(THREAD_SUSPEND_RESUME, false, tid);
 
@@ -476,6 +515,11 @@ begin
     end;
 
   end;
+end;
+
+procedure TfrmThreadlist.PopupMenu1Popup(Sender: TObject);
+begin
+  miCopyValueToClipboard.visible:=(threadTreeview.Selected<>nil) and (threadtreeview.Selected.Level=1);
 end;
 
 procedure TfrmThreadlist.threadTreeviewDblClick(Sender: TObject);

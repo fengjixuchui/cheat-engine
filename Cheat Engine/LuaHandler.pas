@@ -111,7 +111,8 @@ uses mainunit, mainunit2, luaclass, frmluaengineunit, plugin, pluginexports,
   xinput, winsapi, frmExeTrainerGeneratorUnit, CustomBase85, FileUtil, networkConfig,
   LuaCustomType, Filehandler, LuaSQL, frmSelectionlistunit, cpuidUnit, LuaRemoteThread,
   LuaManualModuleLoader, pointervaluelist, frmEditHistoryUnit, LuaCheckListBox,
-  LuaDiagram;
+  LuaDiagram, frmUltimap2Unit, frmcodefilterunit, BreakpointTypeDef, LuaSyntax,
+  LazLogger;
 
   {$warn 5044 off}
 
@@ -139,6 +140,7 @@ resourcestring
   rsGetThreadlistTheProvidedListObjectIsNotValid = 'getThreadlist: the provided List object is not valid';
   rsPlaySoundTheParameterMustBeATableFileOrAMemoryStream = 'playSound: The parameter must be a table file or a memory stream. Nothing else';
   rsNumberRequired = 'Number required';
+  rsScriptCorruptedVar = '%s has corrupted the global %s variable. Many scripts will fail to load now';
 
 var
   printoutput: TStrings;
@@ -178,15 +180,22 @@ begin
 end;
 
 
+
 procedure lua_register(L: Plua_State; const n: PChar; f: lua_CFunction);
 //overriding the original lua_register to add both a lower and uppercase start
 var s: string;
 begin
+  if luasyntaxStringHashList<>nil then
+    luasyntaxStringHashList.Add(n);
+
   lua.lua_register(L, n, f);
   s:=n;
   s[1]:=chr(ord(s[1]) xor $20); //switch from uppercase to lowercase and lowercase to uppercase
 
   lua.lua_register(L, pchar(s), f);
+
+  if luasyntaxStringHashList<>nil then
+    luasyntaxStringHashList.Add(s);
 end;
 
 var luarefcs: TCriticalSection;
@@ -227,6 +236,12 @@ begin
       lua_pop(L, lua_gettop(L));
       result:=LUA_ERRRUN;
       lua_pushstring(l, e.Message);
+
+      if (GetCurrentThreadId=MainThreadID) and (e.Message='Access Violation') and mainform.miEnableLCLDebug.checked then
+      begin
+        DebugLn('Lua Exception: '+e.Message);
+        lazlogger.DumpExceptionBackTrace;
+      end;
     end;
   end;
 
@@ -354,6 +369,9 @@ end;
 function lua_toPoint(L: PLua_State; index: integer): TPoint;
 var i: integer;
 begin
+  result.x:=0;
+  result.y:=0;
+
   i:=lua_absindex(L,index);
   if lua_istable(L, i) then
   begin
@@ -553,7 +571,24 @@ var f: string;
   i,r: integer;
   pc: pchar;
   DirInfo: TSearchRec;
+  mainformwasset: boolean=true;
+  addresslistwasset: boolean=true;
 begin
+  lua_getglobal(LuaVM,'MainForm');
+  if lua_isnil(LuaVM,-1) then
+  begin
+    MessageDlg('MainForm is undefined. Invalid CE Build', mtError, [mbok],0);
+    mainformwasset:=false;
+  end;
+  lua_pop(LuaVM,1);
+
+  lua_getglobal(LuaVM,'AddressList');
+  if lua_isnil(LuaVM,-1) then
+  begin
+    MessageDlg('AddressList is undefined. Invalid CE Build', mtError, [mbok],0);
+    addresslistwasset:=false;
+  end;
+  lua_pop(LuaVM,1);
 
 
   f:='main.lua';
@@ -627,6 +662,29 @@ begin
 
           //reset stack
           lua_pop(LuaVM, lua_gettop(luavm));
+
+          if mainformwasset then
+          begin
+            lua_getglobal(LuaVM,'MainForm');
+            if lua_isnil(LuaVM,-1) then
+            begin
+              MessageDlg(format(rsScriptCorruptedVar, [CheatEngineDir+'autorun'+pathdelim+DirInfo.name, 'MainForm']), mtError,[mbOK],0);
+              mainformwasset:=false;
+            end;
+            lua_pop(LuaVM,1);
+          end;
+
+          if addresslistwasset then
+          begin
+            lua_getglobal(LuaVM,'AddressList');
+            if lua_isnil(LuaVM,-1) then
+            begin
+              MessageDlg(format(rsScriptCorruptedVar, [CheatEngineDir+'autorun'+pathdelim+DirInfo.name, 'AddressList']), mtError,[mbOK],0);
+              addresslistwasset:=false;
+            end;
+            lua_pop(LuaVM,1);
+          end;
+
         end;
       end;
       r := FindNext(DirInfo);
@@ -635,6 +693,37 @@ begin
   end;
 
 
+
+  if translationfilepath<>'' then
+  begin
+    if FileExists(translationfilepath+'init.lua') then
+    begin
+      lua_dofile(luavm, pchar(translationfilepath+'init.lua'));
+      lua_pop(LuaVM, lua_gettop(luavm));
+
+      if mainformwasset then
+      begin
+        lua_getglobal(LuaVM,'MainForm');
+        if lua_isnil(LuaVM,-1) then
+        begin
+          MessageDlg(format(rsScriptCorruptedVar, [translationfilepath+'init.lua', 'MainForm']), mtError,[mbOK],0);
+          mainformwasset:=false;
+        end;
+        lua_pop(LuaVM,1);
+      end;
+
+      if addresslistwasset then
+      begin
+        lua_getglobal(LuaVM,'AddressList');
+        if lua_isnil(LuaVM,-1) then
+        begin
+          MessageDlg(format(rsScriptCorruptedVar, [translationfilepath+'init.lua', 'AddressList']), mtError,[mbOK],0);
+          addresslistwasset:=false;
+        end;
+        lua_pop(LuaVM,1);
+      end;
+    end;
+  end;
 end;
 
 function lua_strtofloat(s: string): double;
@@ -670,7 +759,12 @@ begin
     begin
       s2:=lua_gettop(luavm);
       if (s2-stackpos)>0 then
-        result:=lua_tointeger(luavm, stackpos-s2)
+      begin
+        if lua_isnil(luavm,-1)=false then
+          result:=lua_tointeger(luavm, stackpos-s2)
+        else
+          raise exception.create(rsInvalidInt);
+      end
       else
         raise exception.create(Format(rsInvalidInt, [s]));
     end
@@ -2192,23 +2286,22 @@ begin
   result:=0;
   parameters:=lua_gettop(L);
 
-  if lua_isstring(L, -parameters) then
+  if lua_isstring(L, 1) then
   begin
     if processhandle=GetCurrentProcess then
-      addresstoread:=selfsymhandler.getAddressFromNameL(lua_tostring(L,-parameters), waitforsymbols)
+      addresstoread:=selfsymhandler.getAddressFromNameL(lua_tostring(L,1), waitforsymbols)
     else
-      addresstoread:=symhandler.getAddressFromNameL(lua_tostring(L,-parameters), waitforsymbols);
+      addresstoread:=symhandler.getAddressFromNameL(lua_tostring(L,1), waitforsymbols);
   end
   else
-    addresstoread:=lua_tointeger(L,-parameters);
+    addresstoread:=lua_tointeger(L,1);
 
   if parameters>1 then
   begin
-    bytestoread:=lua_tointeger(L,-parameters+1);
+    bytestoread:=lua_tointeger(L,2);
 
     if parameters>2 then
-      tableversion:=lua_toboolean(L, -parameters+2);
-
+      tableversion:=lua_toboolean(L, 3);
   end
   else
     bytestoread:=1;
@@ -2220,7 +2313,7 @@ begin
   x:=0;
   ReadProcessMemory(processhandle, pointer(addresstoread), @bytes[0], bytestoread, x);
 
-  if x>0 then
+  if (x>0) and (x<=bytestoread) then
   begin
     if tableversion then
     begin
@@ -3667,6 +3760,53 @@ begin
   lua_pop(L, lua_gettop(L));
 end;
 
+function AOBScanUnique(L: PLua_state): integer; cdecl;
+var
+  scanstring: string;
+  protectionflags: string;
+  alignmentparam: string;
+  alignmenttype: TFastScanMethod;
+  list: tstringlist;
+  r: ptruint;
+  parameters: integer;
+begin
+  parameters:=lua_gettop(L);
+
+  if parameters=1 then
+  begin
+    scanstring:=Lua_ToString(L,1);
+    if parameters>=2 then
+      protectionflags:=Lua_ToString(L, 2);
+
+    if parameters>=3 then
+      alignmenttype:=TFastScanMethod(lua_tointeger(L, 3));
+
+    if parameters>=4 then
+      alignmentparam:=Lua_ToString(L, 4);
+
+    if scanstring='' then
+    begin
+      lua_pushstring(L,'Invalid parameter. Must be a string');
+      lua_pushnil(L);
+      result:=2;
+    end;
+
+    r:=findaob(scanstring, protectionflags, alignmenttype,alignmentparam,true);
+    if r=0 then
+      lua_pushnil(L)
+    else
+      lua_pushinteger(L,r);
+
+    result:=1;
+  end
+  else
+  begin
+    lua_pushstring(L,'Not enough parameters');
+    lua_pushnil(L);
+    result:=2;
+  end;
+
+end;
 
 function AOBScan(L: PLua_state): integer; cdecl;
 var
@@ -4339,36 +4479,80 @@ var
   mode: word;
 begin
   result:=0;
-  if lua_gettop(L)=2 then
+  if lua_gettop(L)>=1 then
   begin
     filename:=lua_tostring(L, 1);
-    mode:=lua_tointeger(L, 2);
+    if lua_gettop(L)>=2 then
+      mode:=lua_tointeger(L, 2)
+    else
+    begin
+      //in case the user forgets or doesn't care
+      if FileExists(filename) then
+        mode:=fmOpenReadWrite or fmShareDenyNone
+      else
+        mode:=fmCreate;
+    end;
+
     luaclass_newClass(L, TFileStream.create(filename, mode));
     result:=1;
   end;
 end;
 
+{
 function createStringStream(L: Plua_State): integer; cdecl;
 var s: pchar;
-  sl: integer;
+  //sl: size_t;
+  ss: TStringStream;
+  b: TBytes;
+
+  stringlength: psize_t;
+begin
+  getmem(stringlength,16);
+
+
+
+  if lua_gettop(L)>0 then
+    s:=lua_tolstring(L, 1, stringlength)
+  else
+    s:=nil;
+
+  setlength(b,0);
+  ss:=TStringStream.create('',TEncoding.Default,false); //(s);
+  if (s<>nil) and (stringlength^>0) then
+  begin
+    ss.WriteBuffer(s^, stringlength^);
+    ss.position:=0;
+  end;
+
+  freemem(stringlength);
+
+  luaclass_newClass(L, ss);
+  result:=1;
+end;
+}
+
+function createStringStream(L: Plua_State): integer; cdecl;
+var s: pchar;
+  sl: size_t=0;
   ss: TStringStream;
 begin
-  sl:=0;
   if lua_gettop(L)>0 then
     s:=lua_tolstring(L, 1, @sl)
   else
     s:=nil;
 
-  ss:=TStringStream.create(s);
-  if s<>nil then
+  ss:=TStringStream.create('',TEncoding.Default,false);
+  if (s<>nil) and (sl>0) then
   begin
     ss.WriteBuffer(s^, sl);
     ss.position:=0;
   end;
 
-  luaclass_newClass(L, ss);
+  luaclass_newClass(L, ss);       //lua_pushinteger(L,ptruint(ss));
+
   result:=1;
 end;
+
 
 
 function readRegionFromFile(L: Plua_State): integer; cdecl;
@@ -4666,6 +4850,81 @@ begin
   result:=0;
 end;
 
+function dbk_usePhysicalMemoryAccess(L: Plua_State): integer; cdecl;
+begin
+  if dbvm_version<>0 then
+    DBKPhysicalMemoryDBVM
+  else
+    DBKPhysicalMemory;
+
+  MainForm.ProcessLabel.Caption:=strPhysicalMemory;
+  result:=0;
+end;
+
+function dbk_setSaferPhysicalMemoryScanning(L: Plua_State): integer; cdecl;
+begin
+  saferQueryPhysicalMemory:=lua_toboolean(L,1);
+  result:=0;
+end;
+
+
+function lua_dbk_readphysicalmemory(L: PLua_state): integer; cdecl;
+var
+  PhysicalAddress: qword;
+  buffer:pointer;
+  size:integer;
+  i: integer;
+  br: ptruint;
+begin
+  if lua_gettop(L)<2 then raise exception.create('not all parameters given');
+  PhysicalAddress:=lua_tointeger(L,1);
+  size:=lua_tointeger(L,2);
+  getmem(buffer,size);
+
+  br:=0;
+  ReadPhysicalMemory(qword(-1),pointer(PhysicalAddress), buffer, size, br);
+  if size=br then
+  begin
+    CreateByteTableFromPointer(L, buffer,size);
+    freemem(buffer);
+    exit(1);
+  end
+  else
+  begin
+    freemem(buffer);
+    exit(0);
+  end;
+end;
+
+function lua_dbk_writephysicalmemory(L: PLua_state): integer; cdecl;
+var
+  PhysicalAddress: qword;
+  buffer:pointer;
+  size:integer;
+  i: integer;
+  bw: ptruint;
+begin
+  if lua_gettop(L)<2 then raise exception.create('not all parameters given');
+  PhysicalAddress:=lua_tointeger(L,1);
+  if lua_istable(L,2)=false then raise exception.create('2nd parameter needs to be a bytetable');
+  size:=lua_objlen(L, 2);
+  getmem(buffer,size);
+  readBytesFromTable(L,2,buffer,size);
+
+  bw:=0;
+  WritePhysicalMemory(qword(-1),pointer(PhysicalAddress), buffer, size, bw);
+  if size=bw then
+    lua_pushboolean(L,true)
+  else
+    lua_pushboolean(L,false);
+
+  freemem(buffer);
+
+  exit(1);
+
+end;
+
+
 function dbk_getPEProcess(L: PLua_State): integer; cdecl;
 var
   parameters: integer;
@@ -4880,6 +5139,13 @@ begin
   lua_pushinteger(L, dbvm_getRealCR4);
   result:=1;
 end;
+
+function lua_dbk_test(L: PLua_state): integer; cdecl;
+begin
+  result:=0;
+  dbk_test;
+end;
+
 
 function lua_dbvm_jtagbp(L: PLua_state): integer; cdecl;
 begin
@@ -5818,7 +6084,7 @@ begin
   if lua_gettop(L)>=1 then
   begin
     PA:=lua_tointeger(L,1);
-    lua_pushinteger(L, dbvm_cloak_removechangeregonbp(PA));
+    lua_pushboolean(L, dbvm_cloak_removechangeregonbp(PA)=0);
     result:=1;
   end;
 end;
@@ -5954,6 +6220,36 @@ begin
   result:=2;
 end;
 
+function lua_dbvm_setTSCAdjust(L: PLua_State): integer; cdecl;
+var
+  enabled:boolean;
+  timeout: integer;
+begin
+  result:=0;
+  if lua_gettop(L)>=1 then
+  begin
+    enabled:=lua_toboolean(L,1);
+    if enabled and (lua_gettop(L)>=2) then
+      timeout:=lua_tointeger(L,2)
+    else
+      timeout:=2000;
+
+    dbvm_setTSCAdjust(enabled, timeout);
+  end;
+end;
+
+function lua_dbvm_speedhack_setSpeed(L: PLua_State): integer; cdecl;
+var speed: double;
+begin
+  result:=0;
+  if lua_gettop(L)>=1 then
+  begin
+    speed:=lua_tonumber(L,1);
+    dbvm_speedhack_setSpeed(speed);
+  end;
+
+end;
+
 function dbk_readMSR(L: PLua_State): integer; cdecl;
 var
   parameters: integer;
@@ -6035,6 +6331,47 @@ begin
 
   luaclass_newClass(L, paintbox);
   result:=1;
+end;
+
+function allocateSharedMemoryLocal(L: PLua_State): integer; cdecl;
+var
+  parameters: integer;
+  sharedmemoryname: string;
+  size: ptruint;
+  address: pointer;
+begin
+  result:=0;
+  parameters:=lua_gettop(L);
+  if parameters>=1 then
+  begin
+    sharedmemoryname:=Lua_ToString(L,1);
+
+    if parameters>=2 then
+      size:=lua_tointeger(L, 2)
+    else
+      size:=4096;
+
+    lua_pop(L, parameters);
+
+    address:=allocateSharedMemory(sharedmemoryname, size);
+    if address<>nil then
+    begin
+      lua_pushinteger(L, ptruint(address));
+      result:=1;
+    end;
+  end else lua_pop(L, parameters);
+end;
+
+function deallocateSharedMemoryLocal(L: PLua_State): integer; cdecl;
+var address: ptruint;
+begin
+  result:=0;
+  if lua_gettop(L)>=1 then
+  begin
+    address:=lua_tointeger(L,1);
+
+    UnmapViewOfFile(pointer(address));
+  end;
 end;
 
 function allocateSharedMemory(L: PLua_State): integer; cdecl;
@@ -6622,6 +6959,23 @@ begin
 
   result:=1;
   lua_pushboolean(L, dbvm_version>0);
+end;
+
+function dbvm_addMemory(L: PLua_State): integer; cdecl;
+var pagecount: qword;
+begin
+  LoadDBK32;
+  if lua_gettop(L)>=1 then
+  begin
+    pagecount:=lua_tointeger(L,1);
+    allocateMemoryForDBVM(pagecount);
+
+    dbvm_getMemory(pagecount);  //get the new count
+    lua_pushinteger(L, pagecount);
+    result:=1;
+  end
+  else
+    result:=0;
 end;
 
 function shellExecute(L: PLua_State): integer; cdecl;
@@ -7917,7 +8271,7 @@ end;
 
 function lua_stringToMD5String(L:PLua_State): integer; cdecl;
 var msg: pchar;
-    size: integer;
+    size: size_t;
 begin
   if lua_gettop(L)=1 then
   begin
@@ -8086,7 +8440,7 @@ begin
     postrings:=Tstringlist.create;
     try
       filename:=Lua_ToString(L, 1);
-      postrings.LoadFromFile(filename);
+      postrings.LoadFromFile(filename, true);
       if assigned(LRSTranslator) then
       begin
         if (LRSTranslator is TPOTranslator) then
@@ -8393,7 +8747,8 @@ begin
 end;
 
 
-function executeCodeEx(L:PLua_state): integer; cdecl; //executecodeex(callmethod, timeout, address, {param1},{param2},{param3},{...})
+
+function executeMethod(L:PLua_state): integer; cdecl; //executecodeex(callmethod, timeout, address, {instance},{param1},{param2},{param3},{...})
 //callmethod:
 //0: stdcall
 //1: cdecl
@@ -8425,6 +8780,10 @@ var
   stackalloc: integer;
   floatvalueallocs: integer;
 
+  instanceValue: ptruint;
+  instancereg: integer=1;
+  regstr: string;
+
   stackpointer: integer;
 
   value: qword;
@@ -8453,12 +8812,15 @@ var
   timeout: dword;
   thread:thandle;
 begin
-  if lua_gettop(L)<3 then
+  if lua_gettop(L)<4 then
   begin
     lua_pushnil(L);
-    lua_pushstring(L,'Not enough parameters. Minimum: callmethod, timeout, address');
+    lua_pushstring(L,'Not enough parameters. Minimum: callmethod, timeout, address, instance');
     exit(2);
   end;
+
+  paramcount:=lua_gettop(L)-4;
+
 
   setlength(stringallocs,0);
   setlength(allocs,0);
@@ -8478,7 +8840,7 @@ begin
     timeout:=lua_tointeger(L,2);
 
   address:=lua_toaddress(L,3);
-  paramcount:=lua_gettop(L)-3;
+
 
   s:=tstringlist.create;
   floatvalues:=tstringlist.create;
@@ -8508,11 +8870,94 @@ begin
   else
     stackalloc:=s.add('sub esp,'+inttohex(paramcount*4,1));  //save this linenr in case doubles are used
 
+
+  if lua_isnil(L,4)=false then  //check if instance is nil
+  begin
+    //instance is provided
+    if lua_istable(L,4) then
+    begin
+      //table
+      lua_pushstring(L,'regnr');
+      lua_gettable(L,4);
+      if lua_isnil(L,-1) then
+      begin
+        lua_pushinteger(L,1);
+        lua_gettable(L,4);
+        if not lua_isnil(L,-1) then
+          instancereg:=lua_tointeger(L,-1)
+        else
+          instancereg:=1; //assume the user used a table and left out the instancereg cause he wants ecx/rcx
+
+        lua_pop(L,1);
+      end
+      else
+        instanceReg:=lua_tointeger(L,-1);
+
+      lua_pop(L,1);
+
+      lua_pushstring(L,'classinstance');
+      lua_gettable(L,4);
+      if lua_isnil(L,-1) then
+      begin
+        //fu
+        lua_pushinteger(L,2);
+        lua_gettable(L,4);
+        if lua_isnil(L,-1) then
+        begin
+          lua_pushnil(L);
+          lua_pushstring(L,'Invalid instance');
+          exit(2);
+        end;
+
+        instanceValue:=lua_tointeger(L,-1);
+        lua_pop(L,1);
+      end
+      else
+        instanceValue:=lua_tointeger(L,-1);
+
+      lua_pop(L,1);
+
+    end
+    else
+    begin
+      instanceValue:=lua_tointeger(L,4);
+      instanceReg:=1; //ECX/RCX
+    end;
+
+    case instancereg of
+      0: regstr:='rax';
+      1: regstr:='rcx';
+      2: regstr:='rdx';
+      3: regstr:='rbx';
+      4: regstr:='rsp';
+      5: regstr:='rbp';
+      6: regstr:='rsi';
+      7: regstr:='rdi';
+      8: regstr:='r8';
+      9: regstr:='r9';
+      10: regstr:='r10';
+      11: regstr:='r11';
+      12: regstr:='r12';
+      13: regstr:='r13';
+      14: regstr:='r14';
+      15: regstr:='r15';
+    end;
+
+    if processhandler.is64Bit=false then
+    begin
+      if instancereg>=8 then raise exception.create('Invalid instance register');
+      regstr[1]:='e';
+    end;
+    s.add('mov '+regstr+','+inttohex(instanceValue,8));
+
+  end;
+
+
   try
 
     //setup the parameters:
     stackpointer:=0;
-    for i:=4 to lua_gettop(L) do
+    for i:=5 to lua_gettop(L) do
     begin
       valuetype:=0;
       if lua_istable(l,i) then
@@ -8527,7 +8972,7 @@ begin
           if lua_isnil(L,-1) then
           begin
             lua_pushnil(L);
-            lua_pushstring(L,'Invalid parametertype '+inttostr(i+2));
+            lua_pushstring(L,'Invalid parametertype '+inttostr(i+3));
             exit(2);
           end;
         end;
@@ -8544,7 +8989,7 @@ begin
           if lua_isnil(L,-1) then
           begin
             lua_pushnil(L);
-            lua_pushstring(L,'Invalid parametervalue '+inttostr(i+2));
+            lua_pushstring(L,'Invalid parametervalue '+inttostr(i+3));
             exit(2);
           end;
         end;
@@ -8592,8 +9037,8 @@ begin
             begin
               //widestring
               wstr:=Lua_ToString(L,-1);
-              stringallocs[sai]:=virtualallocex(processhandle,nil,length(str)+2,MEM_COMMIT or MEM_RESERVE,PAGE_READWRITE);
-              WriteProcessMemory(processhandle, stringallocs[sai],@wstr[1],length(str)+2,x);
+              stringallocs[sai]:=virtualallocex(processhandle,nil,length(wstr)+2,MEM_COMMIT or MEM_RESERVE,PAGE_READWRITE);
+              WriteProcessMemory(processhandle, stringallocs[sai],@wstr[1],length(wstr)+2,x);
             end;
             value:=ptruint(stringallocs[sai]);
           end
@@ -8673,7 +9118,7 @@ begin
         else
         begin
           lua_pushnil(L);
-          lua_pushstring(L,'Invalid parametertype '+inttostr(i+2)+'('+inttostr(valuetype)+')');
+          lua_pushstring(L,'Invalid parametertype '+inttostr(i+3)+'('+inttostr(valuetype)+')');
           exit(2);
         end;
       end;
@@ -8792,6 +9237,27 @@ begin
 
   end;
 
+end;
+
+function executeCodeEx(L:PLua_state): integer; cdecl;  //executecodeex(callmethod, timeout, address, {param1},{param2},{param3},{...})
+var
+  paramcount: integer;
+  i: integer;
+begin
+  //convert to
+  //executeMethod(callmethod, timeout, address, nil, param1, param2, param3, ...
+
+  paramcount:=lua_gettop(L);
+  if paramcount<3 then
+  begin
+    lua_pushnil(L);
+    lua_pushstring(L,'Not enough parameters. Minimum: callmethod, timeout, address');
+    exit(2);
+  end;
+
+  lua_pushnil(L);
+  lua_insert(L, 4); //instance=nil
+  exit(executeMethod(L));
 end;
 
 function executeCode(L:PLua_state): integer; cdecl; //executecode(address, parameter)
@@ -11166,6 +11632,14 @@ begin
   result:=0;
 end;
 
+function lua_enableKernelSymbols(L: PLua_state): integer; cdecl;
+begin
+  result:=0;
+  symhandler.kernelsymbols:=true;
+  MemoryBrowser.Kernelmodesymbols1.checked:=true;
+  symhandler.reinitialize(true);
+end;
+
 function lua_enumExports(L: PLua_state): integer; cdecl;
 var
   address: ptruint;
@@ -11442,6 +11916,7 @@ begin
     lua_register(L, 'generateAPIHookScript', generateAPIHookScript_lua);
     lua_register(L, 'createProcess', createProcess);
     lua_register(L, 'AOBScan', AOBScan);
+    lua_register(L, 'AOBScanUnique', AOBScanUnique);
     lua_register(L, 'getOpenedProcessID', getOpenedProcessID);
     lua_register(L, 'getAddress', getAddress);
     lua_register(L, 'getModuleSize', getModuleSize);
@@ -11603,6 +12078,14 @@ begin
     lua_register(L, 'dbk_useKernelmodeOpenProcess', dbk_useKernelmodeOpenProcess);
     lua_register(L, 'dbk_useKernelmodeProcessMemoryAccess', dbk_useKernelmodeProcessMemoryAccess);
     lua_register(L, 'dbk_useKernelmodeQueryMemoryRegions', dbk_useKernelmodeQueryMemoryRegions);
+    lua_register(L, 'dbk_usePhysicalMemoryAccess', dbk_usePhysicalMemoryAccess);
+    lua_register(L, 'dbk_setSaferPhysicalMemoryScanning', dbk_setSaferPhysicalMemoryScanning);
+
+
+    lua_register(L ,'dbk_readPhysicalMemory', lua_dbk_readphysicalmemory);
+    lua_register(L ,'dbk_writePhysicalMemory', lua_dbk_writephysicalmemory);
+
+
     lua_register(L, 'dbk_getPEProcess', dbk_getPEProcess);
     lua_register(L, 'dbk_getPEThread', dbk_getPEThread);
     lua_register(L, 'dbk_executeKernelMemory', dbk_executeKernelMemory);
@@ -11613,6 +12096,7 @@ begin
     lua_register(L, 'dbk_getCR0', dbk_getCR0);
     lua_register(L, 'dbk_getCR3', dbk_getCR3);
     lua_register(L, 'dbk_getCR4', dbk_getCR4);
+    lua_register(L, 'dbk_test', lua_dbk_test);
     lua_register(L, 'dbvm_getCR0', dbvm_getCR0);
     lua_register(L, 'dbvm_getCR3', dbvm_getCR3);
     lua_register(L, 'dbvm_getCR4', dbvm_getCR4);
@@ -11645,6 +12129,9 @@ begin
     lua_register(L, 'dbvm_ultimap2_hideRangeUsage', lua_dbvm_ultimap2_hideRangeUsage); //same
     lua_register(L, 'dbvm_ultimap_getDebugInfo', lua_dbvm_ultimap_getDebugInfo); //more debugging
 
+    lua_register(L, 'dbvm_setTSCAdjust', lua_dbvm_setTSCAdjust);
+    lua_register(L, 'dbvm_speedhack_setSpeed', lua_dbvm_speedhack_setSpeed);
+
     lua_register(L, 'dbk_getPhysicalAddress', dbk_getPhysicalAddress);
     lua_register(L, 'dbk_writesIgnoreWriteProtection', dbk_writesIgnoreWriteProtection);
 
@@ -11652,6 +12139,10 @@ begin
     lua_register(L, 'readProcessMemoryCR3', lua_readProcessMemoryCR3);
     lua_register(L, 'writeProcessMemoryCR3', lua_writeProcessMemoryCR3);
 
+
+
+    lua_register(L, 'allocateSharedMemoryLocal', allocateSharedMemoryLocal);
+    lua_register(L, 'deallocateSharedMemoryLocal', deallocateSharedMemoryLocal);
 
     lua_register(L, 'allocateSharedMemory', allocateSharedMemory);
     lua_register(L, 'deallocateSharedMemory', deallocateSharedMemory);
@@ -11693,6 +12184,7 @@ begin
     lua_register(L, 'setAPIPointer', setAPIPointer);
 
     lua_register(L, 'dbvm_initialize', dbvm_initialize);
+    lua_register(L, 'dbvm_addMemory', dbvm_addMemory);
 
     lua_register(L, 'shellExecute', shellExecute);
     lua_register(L, 'getTickCount', getTickCount_lua);
@@ -11810,6 +12302,8 @@ begin
 
     lua_register(L, 'executeCode', executeCode);
     lua_register(L, 'executeCodeEx', executeCodeEx);
+    lua_register(L, 'executeMethod', executeMethod);
+
 
     lua_register(L, 'executeCodeLocal', executeCodeLocal);
     lua_register(L, 'executeCodeLocalEx', executeCodeLocalEx);
@@ -11913,6 +12407,8 @@ begin
     lua_register(L, 'getHotkeyHandlerThread', lua_getHotkeyHandlerThread);
     lua_register(L, 'enumMemoryRegions', lua_enumMemoryRegions);
     lua_register(L, 'enableWindowsSymbols', lua_enableWindowsSymbols);
+    lua_register(L, 'enableKernelSymbols', lua_enableKernelSymbols);
+
     lua_register(L, 'compareMemory', lua_compareMemory);
 
     lua_register(L, 'enumExports', lua_enumExports);
@@ -11958,6 +12454,8 @@ begin
     initializeLuaWriteLog;
 
     initializeLuaDiagram;
+    initializeLuaUltimap2;
+    initializeLuaCodeFilter;
 
 
 

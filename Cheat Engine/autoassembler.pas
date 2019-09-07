@@ -31,6 +31,8 @@ type TRegisteredAutoAssemblerCommand=class
   callback: TAutoAssemblerCallback;
 end;
 
+type EAutoAssembler=class(exception);
+
 procedure RegisterAutoAssemblerCommand(command: string; callback: TAutoAssemblerCallback);
 procedure UnregisterAutoAssemblerCommand(command: string);
 function registerAutoAssemblerPrologue(m: TAutoAssemblerPrologue; postAOBSCAN: boolean=false): integer;
@@ -240,16 +242,59 @@ end;
 procedure tokenize(input: string; tokens: tstringlist);
 var i: integer;
     a: integer;
+    inquote: boolean=false;
+    inquote2: boolean=false;
 begin
 
   tokens.clear;
   a:=-1;
   for i:=1 to length(input) do
   begin
+    if inquote and (input[i]<>'''') then continue;
+    if inquote2 and (input[i]<>'"') then continue;
+
     case input[i] of
       'a'..'z','A'..'Z','0'..'9','.', '_','#','@': if a=-1 then a:=i;
       else
       begin
+        if (input[i]='''') then
+        begin
+          if inquote then
+          begin
+            if a<>-1 then
+              tokens.AddObject(copy(input,a,i-a),tobject(a));
+
+            a:=-1;
+            inquote:=false;
+          end
+          else
+          begin
+            inquote:=true;
+            a:=i;
+          end;
+
+          continue;
+        end;
+
+        if (input[i]='"') then
+        begin
+          if inquote2 then
+          begin
+            if a<>-1 then
+              tokens.AddObject(copy(input,a,i-a),tobject(a));
+
+            a:=-1;
+            inquote2:=false;
+          end
+          else
+          begin
+            inquote2:=true;
+            a:=i;
+          end;
+
+          continue;
+        end;
+
         if a<>-1 then
           tokens.AddObject(copy(input,a,i-a),tobject(a));
         a:=-1;
@@ -1828,7 +1873,7 @@ begin
 
               include:=tstringlist.Create;
               try
-                include.LoadFromFile(s1);
+                include.LoadFromFile(s1, true);
                 removecomments(include);
                 unlabeledlabels(include);
 
@@ -2498,11 +2543,11 @@ begin
 
 
               if not ok1 then
-                raise exception.Create('bla');
+                raise EAutoAssembler.Create('bla');
 
             end;
           except
-            raise exception.Create(rsThisInstructionCanTBeCompiled);
+            raise EAutoAssembler.Create(rsThisInstructionCanTBeCompiled);
           end;
 
         finally
@@ -2511,7 +2556,7 @@ begin
 
       except
         on E:exception do
-          raise exception.Create(Format(rsErrorInLine, [IntToStr(currentlinenr), currentline, e.Message]));
+          raise EAutoAssembler.Create(Format(rsErrorInLine, [IntToStr(currentlinenr), currentline, e.Message]));
 
       end;
     end;
@@ -2545,7 +2590,7 @@ begin
               break;
             end;
 
-        if not ok1 then raise exception.Create(Format(rsWasSupposedToBeAddedToTheSymbollistButItIsnTDeclar, [addsymbollist[i]]));
+        if not ok1 then raise EAssemblerException.create(Format(rsWasSupposedToBeAddedToTheSymbollistButItIsnTDeclar, [addsymbollist[i]]));
       end;
     end;
 
@@ -2599,7 +2644,7 @@ begin
               break;
             end;
 
-        if not ok1 then raise exception.Create(Format(rsTheAddressInCreatethreadIsNotValid, [createthread[i]]));
+        if not ok1 then raise EAssemblerException.create(Format(rsTheAddressInCreatethreadIsNotValid, [createthread[i]]));
 
       end;
 
@@ -2652,7 +2697,7 @@ begin
               break;
             end;
 
-        if not ok1 then raise exception.Create(Format(rsTheAddressInCreatethreadAndWaitIsNotValid, [createthread[i]]));
+        if not ok1 then raise EAssemblerException.create(Format(rsTheAddressInCreatethreadAndWaitIsNotValid, [createthread[i]]));
 
       end;
 
@@ -2705,7 +2750,7 @@ begin
               break;
             end;
 
-        if not ok1 then raise exception.Create(Format(rsTheAddressInLoadbinaryIsNotValid, [loadbinary[i].address, loadbinary[i].filename]));
+        if not ok1 then raise EAssemblerException.create(Format(rsTheAddressInLoadbinaryIsNotValid, [loadbinary[i].address, loadbinary[i].filename]));
 
       end;
 
@@ -2820,7 +2865,7 @@ begin
         if allocs[j].address=0 then
           allocs[j].address:=ptrUint(virtualallocex(processhandle,nil,x, MEM_RESERVE or MEM_COMMIT,protection));
 
-        if allocs[j].address=0 then raise exception.create(rsFailureToAllocateMemory+' 4');
+        if allocs[j].address=0 then raise EAssemblerException.create(rsFailureToAllocateMemory+' 4');
 
         for i:=j+1 to length(allocs)-1 do
           allocs[i].address:=allocs[i-1].address+allocs[i-1].size;
@@ -3123,7 +3168,7 @@ begin
             currentaddress:=symhandler.getAddressFromName(copy(currentline,1,length(currentline)-1));
             continue; //next line
           except
-            raise exception.Create(rsThisAddressSpecifierIsNotValid);
+            raise EAssemblerException.create(rsThisAddressSpecifierIsNotValid);
           end;
         end;
 
@@ -3153,7 +3198,7 @@ begin
 
     except
       on e:exception do
-        raise exception.create(inttostr(currentlinenr)+':'+e.message);
+        raise EAssemblerException.create(inttostr(currentlinenr)+':'+e.message);
     end;
     //end of loop
 
@@ -3303,7 +3348,7 @@ begin
             begin
               try
                 if WaitForSingleObject(threadhandle, 5000)<>WAIT_OBJECT_0 then
-                  raise exception.create('createthreadandwait did not execute properly');
+                  raise EAssemblerException.create('createthreadandwait did not execute properly');
               finally
                 closehandle(threadhandle);
               end;
@@ -3328,7 +3373,14 @@ begin
     begin
       {$ifndef jni}
       if popupmessages then showmessage(rsNotAllInstructionsCouldBeInjected)
+      else
+      begin
+        if memrec<>nil then //there is an memrec provided, so also an ewxception handler
+          raise exception.create(rsNotAllInstructionsCouldBeInjected);
+      end;
       {$endif}
+
+
     end
     else
     begin
@@ -3733,13 +3785,13 @@ begin
   if enablepos=-2 then
   begin
     if not popupmessages then exit;
-    raise exception.Create(rsYouCanOnlyHaveOneEnableSection);
+    raise EAssemblerException.create(rsYouCanOnlyHaveOneEnableSection);
   end;
 
   if disablepos=-2 then
   begin
     if not popupmessages then exit;
-    raise exception.Create(rsYouCanOnlyHaveOneDisableSection);
+    raise EAssemblerException.create(rsYouCanOnlyHaveOneDisableSection);
   end;
 
   tempstrings:=tstringlist.create;
@@ -3754,14 +3806,14 @@ begin
       if (enablepos=-1) then
       begin
         if not popupmessages then exit;
-        raise exception.Create(rsYouHavnTSpecifiedAEnableSection);
+        raise EAssemblerException.create(rsYouHavnTSpecifiedAEnableSection);
 
       end;
 
       if (disablepos=-1) then
       begin
         if not popupmessages then exit;
-        raise exception.Create(rsYouHavnTSpecifiedADisableSection);
+        raise EAssemblerException.create(rsYouHavnTSpecifiedADisableSection);
 
       end;
 

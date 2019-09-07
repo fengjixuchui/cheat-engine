@@ -1,19 +1,20 @@
 object formSettings: TformSettings
-  Left = 452
+  Left = 429
   Height = 672
-  Top = 194
+  Top = 263
   Width = 810
   AutoSize = True
   BorderIcons = [biSystemMenu]
   Caption = 'Cheat Engine settings'
   ClientHeight = 672
   ClientWidth = 810
+  OnChangeBounds = FormChangeBounds
   OnClose = FormClose
   OnCreate = FormCreate
   OnDestroy = FormDestroy
   OnShow = FormShow
   Position = poMainFormCenter
-  LCLVersion = '1.6.4.0'
+  LCLVersion = '2.0.0.4'
   object pnlConfig: TPanel
     Left = 0
     Height = 635
@@ -30,7 +31,6 @@ object formSettings: TformSettings
       Top = 1
       Width = 148
       Align = alLeft
-      DefaultItemHeight = 18
       HideSelection = False
       Indent = 19
       ReadOnly = True
@@ -641,39 +641,52 @@ object formSettings: TformSettings
             ShowHint = True
             TabOrder = 25
           end
+          object cbUseThreadForFreeze: TCheckBox
+            AnchorSideLeft.Control = Label12
+            AnchorSideLeft.Side = asrBottom
+            AnchorSideTop.Control = Label12
+            AnchorSideTop.Side = asrCenter
+            Left = 258
+            Height = 19
+            Top = 549
+            Width = 128
+            BorderSpacing.Left = 8
+            Caption = 'Use thread for freeze'
+            TabOrder = 26
+          end
         end
       end
       object tsHotkeys: TTabSheet
         Caption = 'Hotkeys'
-        ClientHeight = 602
-        ClientWidth = 643
+        ClientHeight = 605
+        ClientWidth = 652
         ImageIndex = 7
         inline frameHotkeyConfig: TframeHotkeyConfig
-          Height = 602
-          Width = 643
+          Height = 605
+          Width = 652
           Align = alClient
-          ClientHeight = 602
-          ClientWidth = 643
+          ClientHeight = 605
+          ClientWidth = 652
           DesignLeft = 737
           DesignTop = 306
           inherited Panel1: TPanel
-            Height = 552
-            Width = 417
-            ClientHeight = 552
-            ClientWidth = 417
+            Height = 555
+            Width = 426
+            ClientHeight = 555
+            ClientWidth = 426
             inherited Label1: TLabel
-              Width = 417
+              Width = 426
             end
             inherited ListBox1: TListBox
-              Height = 537
-              Width = 417
+              Height = 540
+              Width = 426
             end
           end
           inherited Panel2: TPanel
-            Left = 417
-            Height = 552
+            Left = 426
+            Height = 555
             Width = 226
-            ClientHeight = 552
+            ClientHeight = 555
             ClientWidth = 226
             inherited Edit1: TEdit
               Width = 222
@@ -694,8 +707,8 @@ object formSettings: TformSettings
             end
           end
           inherited Panel5: TPanel
-            Width = 643
-            ClientWidth = 643
+            Width = 652
+            ClientWidth = 652
             inherited Label4: TLabel
               Left = 121
             end
@@ -713,8 +726,8 @@ object formSettings: TformSettings
       end
       object Unrandomizer: TTabSheet
         Caption = 'Unrandomizer'
-        ClientHeight = 602
-        ClientWidth = 643
+        ClientHeight = 605
+        ClientWidth = 652
         ImageIndex = 8
         object Label5: TLabel
           AnchorSideLeft.Control = Unrandomizer
@@ -755,28 +768,28 @@ object formSettings: TformSettings
       end
       object ScanSettings: TTabSheet
         Caption = 'Scan Settings'
-        ClientHeight = 602
-        ClientWidth = 643
+        ClientHeight = 605
+        ClientWidth = 652
         ImageIndex = 1
         object ScrollBox2: TScrollBox
           Left = 0
-          Height = 602
+          Height = 605
           Top = 0
-          Width = 643
+          Width = 652
           HorzScrollBar.Page = 599
           HorzScrollBar.Tracking = True
-          VertScrollBar.Page = 356
+          VertScrollBar.Page = 413
           VertScrollBar.Tracking = True
           Align = alClient
-          ClientHeight = 598
-          ClientWidth = 639
+          ClientHeight = 601
+          ClientWidth = 648
           TabOrder = 0
           object Label3: TLabel
             AnchorSideTop.Control = cbMemMapped
             AnchorSideTop.Side = asrBottom
             Left = 0
             Height = 15
-            Top = 318
+            Top = 375
             Width = 78
             BorderSpacing.Top = 5
             Caption = 'Thread priority'
@@ -812,7 +825,7 @@ object formSettings: TformSettings
             AnchorSideTop.Side = asrBottom
             Left = 0
             Height = 15
-            Top = 241
+            Top = 298
             Width = 217
             BorderSpacing.Top = 10
             Caption = 'Scan the following memory region types:'
@@ -823,7 +836,7 @@ object formSettings: TformSettings
             AnchorSideTop.Side = asrBottom
             Left = 0
             Height = 23
-            Top = 333
+            Top = 390
             Width = 122
             ItemHeight = 15
             ItemIndex = 4
@@ -871,7 +884,7 @@ object formSettings: TformSettings
             AnchorSideTop.Side = asrBottom
             Left = 0
             Height = 19
-            Top = 275
+            Top = 332
             Width = 397
             Caption = 'MEM_IMAGE:Memory that is mapped into the view of an image section'
             Checked = True
@@ -883,7 +896,7 @@ object formSettings: TformSettings
             AnchorSideTop.Side = asrBottom
             Left = 0
             Height = 19
-            Top = 294
+            Top = 351
             Width = 599
             Caption = 'MEM_MAPPED:Memory that is mapped into the view of a section. (E.g:File mapping, emulator memory, slow)'
             TabOrder = 4
@@ -893,7 +906,7 @@ object formSettings: TformSettings
             AnchorSideTop.Side = asrBottom
             Left = 0
             Height = 19
-            Top = 256
+            Top = 313
             Width = 223
             Caption = 'MEM_PRIVATE:Memory that is private.'
             Checked = True
@@ -917,7 +930,7 @@ object formSettings: TformSettings
             AnchorSideTop.Side = asrBottom
             Left = 0
             Height = 19
-            Top = 174
+            Top = 231
             Width = 332
             Caption = 'Don''t store the temporary scanfiles in the windows tempdir'
             OnChange = cbDontusetempdirChange
@@ -931,7 +944,7 @@ object formSettings: TformSettings
             AnchorSideRight.Side = asrBottom
             Left = 15
             Height = 23
-            Top = 208
+            Top = 265
             Width = 317
             Anchors = [akTop, akLeft, akRight]
             BorderSpacing.Left = 15
@@ -944,7 +957,7 @@ object formSettings: TformSettings
             AnchorSideTop.Side = asrBottom
             Left = 15
             Height = 15
-            Top = 193
+            Top = 250
             Width = 223
             BorderSpacing.Left = 15
             Caption = 'Store the temporary scanfiles here instead:'
@@ -960,7 +973,7 @@ object formSettings: TformSettings
             AnchorSideRight.Side = asrBottom
             Left = 332
             Height = 25
-            Top = 207
+            Top = 264
             Width = 25
             BorderSpacing.Right = 15
             Enabled = False
@@ -994,11 +1007,11 @@ object formSettings: TformSettings
             ParentShowHint = False
           end
           object cgAllTypes: TCheckGroup
-            AnchorSideTop.Control = cbPauseWhenScanningOnByDefault
+            AnchorSideTop.Control = edtRepeatDelay
             AnchorSideTop.Side = asrBottom
             Left = 0
             Height = 89
-            Top = 85
+            Top = 142
             Width = 244
             AutoFill = True
             AutoSize = True
@@ -1030,14 +1043,64 @@ object formSettings: TformSettings
             }
           end
           object cbPauseWhenScanningOnByDefault: TCheckBox
+            AnchorSideTop.Control = cbSkip_PAGE_WRITECOMBINE
+            AnchorSideTop.Side = asrBottom
+            Left = 0
+            Height = 19
+            Top = 85
+            Width = 206
+            Caption = 'Pause while scanning on by default'
+            TabOrder = 10
+          end
+          object cbSkip_PAGE_WRITECOMBINE: TCheckBox
+            AnchorSideLeft.Control = cbSkip_PAGE_NOCACHE
             AnchorSideTop.Control = cbSkip_PAGE_NOCACHE
             AnchorSideTop.Side = asrBottom
             Left = 0
             Height = 19
             Top = 66
-            Width = 206
-            Caption = 'Pause while scanning on by default'
-            TabOrder = 10
+            Width = 380
+            Caption = 'Don''t scan memory that is protected with the Write Combine option'
+            Checked = True
+            State = cbChecked
+            TabOrder = 11
+          end
+          object lblRepeatDelay: TLabel
+            AnchorSideLeft.Control = cbPauseWhenScanningOnByDefault
+            AnchorSideTop.Control = cbPauseWhenScanningOnByDefault
+            AnchorSideTop.Side = asrBottom
+            Left = 0
+            Height = 15
+            Top = 104
+            Width = 94
+            Caption = 'Repeat scan delay'
+            ParentColor = False
+          end
+          object edtRepeatDelay: TEdit
+            AnchorSideLeft.Control = lblRepeatDelay
+            AnchorSideTop.Control = lblRepeatDelay
+            AnchorSideTop.Side = asrBottom
+            Left = 0
+            Height = 23
+            Hint = 'The delay in milliseconds to wait before starting a next scan when the ''repeat'' checkbox is ticked'#13#10#13#10'0=no wait'
+            Top = 119
+            Width = 80
+            ParentShowHint = False
+            ShowHint = True
+            TabOrder = 12
+            Text = '0'
+          end
+          object Label25: TLabel
+            AnchorSideLeft.Control = edtRepeatDelay
+            AnchorSideLeft.Side = asrBottom
+            AnchorSideTop.Control = edtRepeatDelay
+            AnchorSideTop.Side = asrCenter
+            Left = 80
+            Height = 15
+            Top = 123
+            Width = 16
+            Caption = 'ms'
+            ParentColor = False
           end
         end
       end
@@ -1505,7 +1568,6 @@ object formSettings: TformSettings
               ClientHeight = 26
               ClientWidth = 225
               TabOrder = 2
-              OnClick = Panel11Click
               object btnMakeKernelDebugPossible: TButton
                 Left = 0
                 Height = 25
@@ -1690,6 +1752,7 @@ object formSettings: TformSettings
               Width = 353
               Caption = 'Ignore'
               Checked = True
+              OnChange = miUnexpectedBreakpointsOptionChange
               TabOrder = 3
               TabStop = True
             end
@@ -1699,6 +1762,7 @@ object formSettings: TformSettings
               Top = 19
               Width = 353
               Caption = 'Break'
+              OnChange = miUnexpectedBreakpointsOptionChange
               TabOrder = 0
             end
             object miUnexpectedBreakpointsBreakWhenInsideRegion: TRadioButton
@@ -1707,6 +1771,7 @@ object formSettings: TformSettings
               Top = 38
               Width = 353
               Caption = 'Break when inside specific regions'
+              OnChange = miUnexpectedBreakpointsOptionChange
               TabOrder = 1
             end
             object cbAllocsAddToWatchedRegions: TCheckBox

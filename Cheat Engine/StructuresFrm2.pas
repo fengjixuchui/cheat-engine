@@ -329,6 +329,7 @@ type
 
   TfrmStructures2 = class(TForm)
     FindDialog1: TFindDialog;
+    miOpenInNewWindow: TMenuItem;
     sdImageList: TImageList;
     miCommonalityScan: TMenuItem;
     MenuItem5: TMenuItem;
@@ -416,6 +417,7 @@ type
     tmFixGui: TTimer;
     updatetimer: TTimer;
     tvStructureView: TTreeView;
+    procedure miOpenInNewWindowClick(Sender: TObject);
     procedure miCommonalityScanClick(Sender: TObject);
     procedure MenuItem8Click(Sender: TObject);
     procedure miViewClick(Sender: TObject);
@@ -1598,7 +1600,7 @@ begin
         begin
           i:=4096-((baseaddress+o) and $fff) ;
 
-          i:=min(i,bytesize-o);
+          i:=min(i,bytesize-integer(o));
 
           readprocessmemory(processhandle,pointer(baseaddress+o),@buf[o],i,x);
           inc(o,x);
@@ -3522,6 +3524,11 @@ begin
       if (struct=nil) or (struct.structelementlist=nil) then exit; //this whole structure is destroyed
 
       //now get the element this node represents and check if it is a pointer
+      if node.Index>=struct.count then
+      begin
+        outputdebugstring('Error at tvStructureViewCollapsed. node.Index>=struct.count');
+        exit;
+      end;
       node.HasChildren:=struct[node.Index].isPointer;
 
       if miAutoDestroyLocal.checked then //delete autocreated local structs when closed
@@ -4158,6 +4165,9 @@ begin
     else
       i:=0;
 
+    if node.index+i>=nodestruct.count then
+      exit(nil);
+
     result:=nodestruct[node.index+i];
   end;
 end;
@@ -4190,7 +4200,7 @@ var
   i: integer;
   ei: TfrmStructures2ElementInfo;
 begin
-  n:=tvStructureView.selected;
+  n:=tvStructureView.GetLastMultiSelected;
   if n=nil then exit;
 
   structElement:=getStructElementFromNode(n);
@@ -4382,8 +4392,8 @@ begin
         structElement.ExpandChangesAddress:=ExpandChangesAddress;
 
 
-
-        tvStructureView.Items.SelectOnlyThis(n.Items[structElement.Index]);
+        if structElement.index<n.Count then
+          tvStructureView.Items.SelectOnlyThis(n.Items[structElement.Index]);
       end;
 
       free;
@@ -4400,13 +4410,13 @@ end;
 
 procedure TfrmStructures2.miAddChildElementClick(Sender: TObject);
 begin
-  addFromNode(tvStructureView.selected, true);
+  addFromNode(tvStructureView.GetLastMultiSelected, true);
 end;
 
 
 procedure TfrmStructures2.miAddElementClick(Sender: TObject);
 begin
-  addFromNode(tvStructureView.selected);
+  addFromNode(tvStructureView.GetLastMultiSelected);
 end;
 
 
@@ -4424,10 +4434,10 @@ var offsetstring: string;
   offset: integer;
 begin
   //get the structure and the element to start from
-  struct:=getStructFromNode(tvStructureView.selected);
+  struct:=getStructFromNode(tvStructureView.GetLastMultiSelected);
   if struct<>nil then
   begin
-    element:=getStructElementFromNode(tvStructureView.selected);
+    element:=getStructElementFromNode(tvStructureView.GetLastMultiSelected);
     if (element=nil) and (struct.count>0) then
       element:=struct[0];
 
@@ -4535,12 +4545,17 @@ var childstruct: TDissectedStruct;
   c: TStructColumn;
   address: ptruint;
   hasError: boolean;
+  s: string;
+
+  selected: TTreenode;
 begin
 
   try
-    ownerstruct:=getStructFromNode(tvStructureView.selected);
-    childstruct:=getChildStructFromNode(tvStructureView.selected);
-    structelement:=getStructElementFromNode(tvStructureView.Selected);
+    selected:=tvStructureView.GetLastMultiSelected;
+
+    ownerstruct:=getStructFromNode(selected);
+    childstruct:=getChildStructFromNode(selected);
+    structelement:=getStructElementFromNode(selected);
 
     miFullUpgrade.visible:=((childstruct=nil) and (structelement<>nil) and (structelement.isPointer)) or ((childstruct<>nil) and (not childstruct.isInGlobalStructList));
     if miFullUpgrade.visible then
@@ -4552,26 +4567,30 @@ begin
 
     end;
 
+    miOpenInNewWindow.visible:=((not miFullUpgrade.visible) and (childstruct<>nil)) or (tvStructureView.SelectionCount>1);
+
     miAddElement.visible:=(ownerstruct<>nil) or (childstruct<>nil);
     miAddChildElement.visible:=(childstruct<>nil);
-    miDeleteElement.visible:=tvStructureView.Selected<>nil;
+    miDeleteElement.visible:=selected<>nil;
     miChangeElement.visible:=structElement<>nil;
 
-    miBrowseAddress.Visible:=tvStructureView.Selected<>nil;
+    miBrowseAddress.Visible:=selected<>nil;
     miBrowsePointer.visible:=(structelement<>nil) and (structelement.isPointer);
 
     miChangeValue.Visible:=structelement<>nil;
     miUpdateOffsets.visible:=structelement<>nil;
     miAddToAddresslist.Visible:=structelement<>nil;
 
-    miRecalculateAddress.Visible:=(structelement<>nil) and (tvStructureView.selected.Level=1);
+    miRecalculateAddress.Visible:=(structelement<>nil) and (selected.Level=1);
 
     n2.visible:=ownerstruct<>nil;
 
     N3.visible:=miRecalculateAddress.visible or miUpdateOffsets.visible;
 
     micopy.Visible:=structelement<>nil;
-    mipaste.Visible:=structelement<>nil;
+    s:=copy(trim(clipboard.astext),1,9);
+
+    mipaste.Visible:=(ownerstruct<>nil) and (s='<Elements'); //  structelement<>nil;
     n4.visible:=n3.visible and (miCopy.visible or mipaste.visible);
 
     c:=getFocusedColumn;
@@ -4583,7 +4602,7 @@ begin
     if (miChangeType.visible) then
     begin
       hasError := true; // default to not show
-      if (tvStructureView.Selected<>nil) and (c<>nil)then address := getAddressFromNode(tvStructureView.Selected, c, hasError);
+      if (selected<>nil) and (c<>nil)then address := getAddressFromNode(selected, c, hasError);
 
       if hasError then
       begin
@@ -4747,6 +4766,8 @@ begin
 
 end;
 
+
+
 procedure TfrmStructures2.miNewWindowClick(Sender: TObject);
 begin
   with tfrmstructures2.create(application) do
@@ -4875,7 +4896,7 @@ var s: string;
   oldaddress, newaddress: ptruint;
   offset: ptruint;
 begin
-  n:=tvStructureView.Selected;
+  n:=tvStructureView.GetLastMultiSelected;
   if (n<>nil) and (n.level=1) then //recalculate can only be done on the main structure
   begin
     oldaddress:=getAddressFromNode(n, getFocusedColumn, e);
@@ -5029,8 +5050,8 @@ begin
   if not casesensitive then
     search:=uppercase(search);
 
-  if tvStructureView.Selected<>nil then
-    i:=tvStructureView.Selected.AbsoluteIndex
+  if tvStructureView.GetLastMultiSelected<>nil then
+    i:=tvStructureView.GetLastMultiSelected.AbsoluteIndex
   else
     i:=-1;
 
@@ -5334,13 +5355,13 @@ var
   isroot: boolean;
 begin
   isroot:=false;
-  if (mainstruct<>nil) and (tvStructureView.Selected<>nil) then
+  if (mainstruct<>nil) and (tvStructureView.GetLastMultiSelected<>nil) then
   begin
-    e:=getStructElementFromNode(tvStructureView.Selected);
-    struct:=getStructFromNode(tvStructureView.Selected);
+    e:=getStructElementFromNode(tvStructureView.GetLastMultiSelected);
+    struct:=getStructFromNode(tvStructureView.GetLastMultiSelected);
 
     setlength(pathtobase,0);
-    n:=tvStructureView.Selected.parent;
+    n:=tvStructureView.GetLastMultiSelected.parent;
     if n<>nil then
     begin
       while n.parent<>nil do
@@ -5366,7 +5387,7 @@ begin
         baseoffset:=e.Offset+e.Bytesize;
 
       doc:=nil;
-      ss:=TStringStream.create(clipboard.AsText);
+      ss:=TStringStream.create(clipboard.AsText,TEncoding.Default, false);
       try
         try
           ReadXMLFile(doc, ss);
@@ -5447,7 +5468,7 @@ begin
     end;
 
 
-    ms:=TStringStream.create('');
+    ms:=TStringStream.create('',TEncoding.Default,false);
     WriteXML(elementnodes, ms);
 
     Clipboard.AsText:=ms.DataString;
@@ -5592,7 +5613,7 @@ var
   error: boolean;
   x: dword;
 begin
-  n:=tvStructureView.Selected;
+  n:=tvStructureView.GetLastMultiSelected;
   if n<>nil then
   begin
     a:=getAddressFromNode(n, getFocusedColumn, error);
@@ -5611,7 +5632,7 @@ var
   c: TStructColumn;
   savedstate: ptruint;
 begin
-  n:=tvStructureView.Selected;
+  n:=tvStructureView.GetLastMultiSelected;
   if n<>nil then
   begin
     c:=getFocusedColumn;
@@ -5645,7 +5666,7 @@ var baseaddress: ptruint;
 
   i: integer;
 begin
-//  n:=tvStructureView.Selected;
+//  n:=tvStructureView.GetLastMultiSelected;
 
   for i:=0 to tvStructureView.SelectionCount-1 do
   begin
@@ -5820,6 +5841,125 @@ begin
 end;
 
 
+procedure TfrmStructures2.miOpenInNewWindowClick(Sender: TObject);
+type
+  TStructListEntry=record
+    struct: TDissectedStruct;
+    nodelist: TList;
+  end;
+  PStructListEntry=^TStructListEntry;
+
+var
+  node: TTreenode;
+  childstruct, struct: TDissectedStruct;
+  a,p: ptruint;
+  f: TfrmStructures2;
+  e: boolean;
+  x: ptruint;
+  i,j: integer;
+
+
+
+  structlistentry: PStructListEntry;
+
+  slist: TList;
+
+  sli: integer;  //structlist[*]->nodelist[*]->node
+
+  nodelist: TList;
+
+
+  sc: TStructColumn;
+begin
+  slist:=tlist.create;
+
+  for i:=0 to tvStructureView.SelectionCount-1 do
+  begin
+    node:=tvStructureView.Selections[i];
+    childstruct:=getChildStructFromNode(node);
+
+    if childstruct<>nil then
+    begin
+      sli:=-1;
+      for j:=0 to slist.count-1 do
+        if PStructListEntry(slist[j])^.struct=childstruct then
+        begin
+          sli:=j;
+          break;
+        end;
+
+      if sli=-1 then
+      begin
+        getmem(structlistentry,sizeof(TStructListEntry));
+
+        structlistentry^.struct:=childstruct;
+        structlistentry^.nodelist:=tlist.Create;
+
+        nodelist:=structlistentry^.nodelist;
+
+        slist.add(structlistentry);
+      end
+      else
+        nodelist:=PStructListEntry(slist[sli])^.nodelist;
+
+      nodelist.add(node);
+    end;
+  end;
+
+  //all nodes are sorted and added
+
+  for i:=0 to slist.Count-1 do
+  begin
+    f:=nil;
+    struct:=PStructListEntry(slist[i])^.struct;
+    nodelist:=PStructListEntry(slist[i])^.nodelist;
+    for j:=0 to nodelist.Count-1 do
+    begin
+      node:=nodelist[j];
+
+      a:=getAddressFromNode(node, getFocusedColumn, e); //or only getFocusedColumn?
+      if not e then
+      begin
+        p:=0;
+        x:=0;
+
+
+        ReadProcessMemory(processhandle, pointer(a), @p, ProcessHandler.pointersize, x);
+        if x=ProcessHandler.pointersize then
+        begin
+          if p=0 then continue;
+          if f=nil then
+          begin
+            f:=tfrmstructures2.create(application);
+            f.mainStruct:=struct;
+          end;
+
+          sc:=f.addColumn;
+          sc.AddressText:=inttohex(p,8);
+        end;
+      end;
+
+    end;
+
+    if f<>nil then
+    begin
+      f.show;
+      f.InitializeFirstNode;
+      f.UpdateCurrentStructOptions;
+    end;
+
+  end;
+
+  for i:=0 to slist.count-1 do
+  begin
+    PStructListEntry(slist[i])^.nodelist.free;
+    freemem(slist[i]);
+  end;
+  slist.free;
+
+
+end;
+
 
 procedure TfrmStructures2.miFullUpgradeClick(Sender: TObject);
 var
@@ -5833,13 +5973,13 @@ var
 
   se: TStructelement;
 begin
-  struct:=getChildStructFromNode(tvStructureView.Selected);
+  struct:=getChildStructFromNode(tvStructureView.GetLastMultiSelected);
   if struct<>nil then
     struct.addToGlobalStructList
   else
   begin
     //create a new structure from this entry
-    node:=tvStructureView.Selected;
+    node:=tvStructureView.GetLastMultiSelected;
     if node=nil then exit;
 
     a:=getAddressFromNode(node, getFocusedColumn, e);
@@ -5892,6 +6032,7 @@ begin
     s:=TDissectedStruct(DissectedStructs[i]).structname;
     mi:=tmenuitem.Create(Structures1);
     mi.Caption:=s;
+    mi.ImageIndex:=14;
     mi.OnClick:=miSelectStructureClick;
     mi.Tag:=ptruint(DissectedStructs[i]);
     mi.RadioItem:=true;
@@ -6118,7 +6259,7 @@ var a: PtrUInt;
   s: string;
   savedstate: PtrUInt;
 begin
-  node:=tvStructureView.Selected;
+  node:=tvStructureView.GetLastMultiSelected;
   if node=nil then exit;
 
   se:=getStructElementFromNode(node);

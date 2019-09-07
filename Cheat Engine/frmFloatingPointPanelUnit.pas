@@ -46,6 +46,13 @@ type
     procedure SetContextPointer(context: PContext);
   end;
 
+
+{$ifdef cpu64}
+procedure doubletoextended(float64:pointer; outextended:pointer); assembler;
+procedure extendedtodouble(float80:pointer;var outdouble:double); assembler;
+{$endif}
+
+
 var frmFloatingPointPanel:TfrmFloatingPointPanel;
 
 implementation

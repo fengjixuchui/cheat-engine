@@ -388,6 +388,7 @@ type
 
 type TDebuggerstate=packed record
   threadid: uint64;
+  causedbydbvm: uint64;
 	eflags : uint64;
 	eax : uint64;
 	ebx : uint64;
@@ -435,10 +436,10 @@ type TGetDeviceDriverFileName=function(ImageBase: LPVOID; lpFilename: LPTSTR; nS
 type TGetLargePageMinimum=function: SIZE_T; stdcall;
 
 
-type TReadProcessMemory=function(hProcess: THandle; lpBaseAddress, lpBuffer: Pointer; nSize: DWORD; var lpNumberOfBytesRead: PTRUINT): BOOL; stdcall;
-type TReadProcessMemory64=function(hProcess: THandle; lpBaseAddress: UINT64; lpBuffer: pointer; nSize: DWORD; var lpNumberOfBytesRead: PTRUINT): BOOL; stdcall;
-type TWriteProcessMemory=function(hProcess: THandle; const lpBaseAddress: Pointer; lpBuffer: Pointer; nSize: DWORD; var lpNumberOfBytesWritten: PTRUINT): BOOL; stdcall;
-type TWriteProcessMemory64=function(hProcess: THandle; BaseAddress: UINT64; lpBuffer: Pointer; nSize: DWORD; var lpNumberOfBytesWritten: ptruint): BOOL; stdcall;
+type TReadProcessMemory=function(hProcess: THandle; lpBaseAddress, lpBuffer: Pointer; nSize: size_t; var lpNumberOfBytesRead: PTRUINT): BOOL; stdcall;
+type TReadProcessMemory64=function(hProcess: THandle; lpBaseAddress: UINT64; lpBuffer: pointer; nSize: size_t; var lpNumberOfBytesRead: PTRUINT): BOOL; stdcall;
+type TWriteProcessMemory=function(hProcess: THandle; const lpBaseAddress: Pointer; lpBuffer: Pointer; nSize: size_t; var lpNumberOfBytesWritten: PTRUINT): BOOL; stdcall;
+type TWriteProcessMemory64=function(hProcess: THandle; BaseAddress: UINT64; lpBuffer: Pointer; nSize: size_t; var lpNumberOfBytesWritten: ptruint): BOOL; stdcall;
 
 
 type TGetThreadContext=function(hThread: THandle; var lpContext: TContext): BOOL; stdcall;
@@ -745,6 +746,10 @@ var
 
   GetRegionInfo: function (hProcess: THandle; lpAddress: Pointer; var lpBuffer: TMemoryBasicInformation; dwLength: DWORD; var mapsline: string): DWORD;  stdcall;
 
+  SetProcessDEPPolicy: function(dwFlags: DWORD): BOOL; stdcall;
+  GetProcessDEPPolicy: function(h: HANDLE; dwFlags: PDWORD; permanent: PBOOL):BOOL; stdcall;
+
+
 
 
  {    just include vmxfunctions
@@ -791,7 +796,7 @@ uses
      dbvmPhysicalMemoryHandler, //'' for physical mem
      {$endif}
      filehandler,  //so I can let readprocessmemory point to ReadProcessMemoryFile in filehandler
-     autoassembler, frmEditHistoryUnit, frmautoinjectunit, cpuidUnit;
+     autoassembler, frmEditHistoryUnit, frmautoinjectunit, cpuidUnit, MemoryBrowserFormUnit;
 {$endif}
 
 
@@ -1133,6 +1138,11 @@ begin
   result:=false;
 end;
 
+function hasEPTSupport: boolean;
+begin
+  result:=false;
+end;
+
 {$else}
 function isIntel: boolean;
 var a,b,c,d: dword;
@@ -1266,9 +1276,9 @@ begin
       if ((readMSR(IA32_VMX_PROCBASED_CTLS2_MSR) shr 32) and (1 shl 1))<>0 then
         result:=true;
     end;
-  end
-  else
-    result:=result and isRunningDBVM;
+  end;
+  //else
+  //  result:=result and isRunningDBVM;
 end;
 
 {$endif}
@@ -1375,6 +1385,8 @@ begin
     if pluginhandler<>nil then
       pluginhandler.handlechangedpointers(0);
     {$endif}
+
+    MemoryBrowser.Kerneltools1.Enabled:=DBKLoaded;
 
   end;
 {$endif}
@@ -1843,6 +1855,11 @@ initialization
     GetLargePageMinimum:=@GetLargePageMinimumStub;
 
 
+  SetProcessDEPPolicy:=GetProcAddress(WindowsKernel, 'SetProcessDEPPolicy');
+  GetProcessDEPPolicy:=GetProcAddress(WindowsKernel, 'GetProcessDEPPolicy');
+
+
+
 
   psa:=loadlibrary('Psapi.dll');
   EnumDeviceDrivers:=GetProcAddress(psa,'EnumDeviceDrivers');
@@ -1851,6 +1868,11 @@ initialization
   u32:=loadlibrary('user32.dll');
   PrintWindow:=GetProcAddress(u32,'PrintWindow');
   ChangeWindowMessageFilter:=GetProcAddress(u32,'ChangeWindowMessageFilter');
+
+
+
+
+
 
   {$ifdef windows}
   GetRegionInfo:=GetRegionInfo_Windows;

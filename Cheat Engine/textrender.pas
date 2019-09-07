@@ -5,11 +5,13 @@ unit textrender;
 interface
 
 uses
-  Classes, SysUtils, graphics, math;
+  Classes, SysUtils, graphics, math, LazUTF8;
 
-function renderFormattedText(canvas: TCanvas; rect: Trect; x,y: integer; formattedtext: string): trect;
+function renderFormattedText(canvas: TCanvas; rect: Trect; x,y: integer; const formattedtext: string): trect;
 
 implementation
+
+uses windows;
 
 const altfonts: array [0..8] of string=('Consolas','Courier','Courier New','Fixedsys','Terminal','Arial','MS Sans Serif','Comic Sans MS','Wingdings');
 
@@ -37,7 +39,7 @@ begin
   canvas.brush.color:=originalState.bgcolor;
 end;
 
-function readIntegerString(formattedtext: string; var index: integer): string;
+function readIntegerString(const formattedtext: string; var index: integer): string;
 begin
   result:='';
   while index<length(formattedtext) do
@@ -54,6 +56,8 @@ end;
 
 function getAnsiColor(c: integer): tcolor;
 begin
+  result:=0;
+
   case c of
     0: result:=RGBToColor(0,0,0);
     1: result:=RGBToColor(128,0,0);
@@ -295,7 +299,7 @@ begin
   end;
 end;
 
-procedure handleCSISequence(canvas: TCanvas; rect: Trect; formattedtext: string; const originalState: TTextState; var index: integer; var _x: integer; var _y: integer);
+procedure handleCSISequence(canvas: TCanvas; rect: Trect; const formattedtext: string; const originalState: TTextState; var index: integer; var _x: integer; var _y: integer);
   function LineHeight: integer;
   begin
     result:=canvas.TextHeight('AFgGjJ');
@@ -307,7 +311,7 @@ procedure handleCSISequence(canvas: TCanvas; rect: Trect; formattedtext: string;
   end;
 
 var
-  lastvalue: integer;
+  lastvalue: integer=0;
   valuelist: array of TParsedValueInformation;
 
   s: string;
@@ -411,7 +415,7 @@ begin
 
 end;
 
-procedure handleEscapeSequence(canvas: TCanvas; rect: Trect; formattedtext: string; const originalState: TTextState; var index: integer; var _x: integer; var _y: integer);
+procedure handleEscapeSequence(canvas: TCanvas; rect: Trect; const formattedtext: string; const originalState: TTextState; var index: integer; var _x: integer; var _y: integer);
 begin
   if index>=length(formattedtext) then exit;
 
@@ -430,7 +434,106 @@ begin
   end;
 end;
 
-function renderFormattedText(canvas: TCanvas; rect: Trect; x,y: integer; formattedtext: string): trect;
+function isChar(const s: string; index: integer; c: char): boolean;
+begin
+  result:=false;
+  if index>=length(s) then exit;
+
+  result:=s[index]=c;
+end;
+
+function handleStyleSequence(canvas: TCanvas; const formattedtext: string; var index: integer): boolean;
+var i: integer;
+begin
+  result:=false;
+  if index>=length(formattedtext) then exit;
+
+  i:=index;
+  inc(i);
+
+  case formattedtext[i] of
+    'b','B':
+    begin
+      if isChar(formattedtext, i+1,']') then
+      begin
+        canvas.Font.Style:=canvas.Font.Style+[fsBold];
+        index:=i+2;
+        result:=true;
+      end;
+    end;
+
+    'u','U':
+    begin
+      if isChar(formattedtext, i+1,']') then
+      begin
+        canvas.Font.Style:=canvas.Font.Style+[fsUnderline];
+        index:=i+2;
+        result:=true;
+      end;
+    end;
+
+    'i','I':
+    begin
+      if isChar(formattedtext, i+1,']') then
+      begin
+        canvas.Font.Style:=canvas.Font.Style+[fsItalic];
+        index:=i+2;
+        result:=true;
+      end;
+    end;
+
+    's','S':
+    begin
+      if isChar(formattedtext, i+1,']') then
+      begin
+        canvas.Font.Style:=canvas.Font.Style+[fsStrikeOut];
+        index:=i+2;
+        result:=true;
+      end;
+    end;
+
+    '/':
+    begin
+      if (length(formattedtext)>=i+2) and (formattedtext[i+2]=']') then
+      begin
+        inc(i);
+        case formattedtext[i] of
+          'b','B':
+          begin
+            canvas.Font.Style:=canvas.Font.Style-[fsBold];
+            index:=i+2;
+            result:=true;
+          end;
+
+          'u','U':
+          begin
+            canvas.Font.Style:=canvas.Font.Style-[fsUnderline];
+            index:=i+2;
+            result:=true;
+          end;
+
+          'i','I':
+          begin
+            canvas.Font.Style:=canvas.Font.Style-[fsItalic];
+            index:=i+2;
+            result:=true;
+          end;
+
+          's','S':
+          begin
+            canvas.Font.Style:=canvas.Font.Style-[fsStrikeOut];
+            index:=i+2;
+            result:=true;
+          end;
+
+        end;
+      end;
+    end;
+
+  end;
+end;
+
+function renderFormattedText(canvas: TCanvas; rect: Trect; x,y: integer; const formattedtext: string): trect;
 var
   i: integer;
   _x: integer;
@@ -443,6 +546,54 @@ var
   temprect: trect;
 
   maxx, maxy: integer;
+
+  charlength: integer;
+  c: string;
+
+  procedure renderChar;
+  begin
+    //renderable character
+    charlength:=UTF8CharacterLength(pchar(@formattedtext[i]));
+    if charlength>1 then
+    begin
+      setlength(c,charlength);
+      copymemory(@c[1], @formattedtext[i],charlength);
+      w:=canvas.TextWidth(c);
+    end
+    else
+    begin
+      canvas.TextRect(rect,_x,_y,formattedtext[i]);
+      w:=canvas.TextWidth(formattedtext[i]);
+    end;
+
+    if canvas.brush.Color<>original.bgcolor then
+    begin
+      temprect:=classes.rect(_x,_y,_x+w,_y+lineheight);
+      if temprect.left>rect.right then
+      begin
+        inc(_x,w);
+
+        maxx:=max(maxx, _x);
+        inc(i);
+        exit;
+      end;
+      if temprect.Right>rect.Right then temprect.right:=rect.right;
+      if temprect.Bottom>rect.bottom then temprect.bottom:=rect.bottom;
+      canvas.FillRect(temprect);
+    end;
+
+    if charlength>1 then
+      canvas.TextRect(rect,_x,_y,c)
+    else
+      canvas.TextRect(rect,_x,_y,formattedtext[i]);
+
+
+
+    inc(_x,w);
+    maxx:=max(maxx, _x);
+    inc(i,charlength);
+  end;
+
 begin
   i:=1;
   original.font:=tfont.create;
@@ -460,6 +611,13 @@ begin
   while i<=length(formattedtext) do
   begin
     case formattedtext[i] of
+      '[':
+      begin
+        //could be a secondary style thingy, check
+        if handleStyleSequence(canvas,formattedtext, i)=false then
+          renderchar;
+      end;
+
       #27:   //escape character
       begin
         inc(i);
@@ -479,32 +637,8 @@ begin
 
       #10: inc(i); //ignore (linefeed)
       else
-      begin
-        w:=canvas.TextWidth(formattedtext[i]);
+        renderChar;
 
-
-        if canvas.brush.Color<>original.bgcolor then
-        begin
-          temprect:=classes.rect(_x,_y,_x+w,_y+lineheight);
-          if temprect.left>rect.right then
-          begin
-            inc(_x,w);
-
-            maxx:=max(maxx, _x);
-            inc(i);
-            continue;
-          end;
-          if temprect.Right>rect.Right then temprect.right:=rect.right;
-          if temprect.Bottom>rect.bottom then temprect.bottom:=rect.bottom;
-          canvas.FillRect(temprect);
-        end;
-
-        canvas.TextRect(rect,_x,_y,formattedtext[i]);
-
-        inc(_x,w);
-        maxx:=max(maxx, _x);
-        inc(i);
-      end;
     end;
   end;
 

@@ -1581,7 +1581,10 @@ var
   self: TSymbolloaderthread;
   mi: tmoduleinfo;
   i: integer;
+
 begin
+  result:=false;
+
   {$IFNDEF UNIX}
   self:=TSymbolloaderthread(UserContext);
   self.CurrentModulename:=ModuleName;
@@ -1675,8 +1678,8 @@ var sfate: TGetSymbolFromAddressThreadEvent;
 begin
   if GetCurrentThreadId=self.ThreadID then raise exception.create('Do not call getAddressFromSymbol from inside the symbolloaderthread');
 
-  if skipAddressToSymbol then exit;
-  if address<$10000 then exit;
+  if skipAddressToSymbol then exit('');
+  if address<$10000 then exit('');
 
 
   //queue an GetSymbolFromAddress event and wait for the result
@@ -2075,7 +2078,7 @@ begin
             d:=d or SYMOPT_DEFERRED_LOADS;
             symsetoptions(d);
 
-            SymbolsLoaded:=SymInitialize(thisprocesshandle, sp, true);
+            SymbolsLoaded:=false; //SymInitialize(thisprocesshandle, sp, true);
             if symbolsloaded=false then
             begin
               SymbolsLoaded:=SymInitialize(thisprocesshandle, sp, false);
@@ -4833,7 +4836,7 @@ begin
 
     commonModuleList.Clear;  
     try
-      commonModuleList.LoadFromFile(s);
+      commonModuleList.LoadFromFile(s,true);
 
       for i:=commonModuleList.Count-1 downto 0 do
       begin

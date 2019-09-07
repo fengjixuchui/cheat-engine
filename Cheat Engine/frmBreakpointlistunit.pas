@@ -7,7 +7,7 @@ interface
 uses
   LCLIntf, Messages, SysUtils, Classes, Graphics, Controls, Forms, Dialogs,
   StdCtrls, CEDebugger, KernelDebugger, ExtCtrls, LResources, ComCtrls, Menus,
-  debuggertypedefinitions;
+  debuggertypedefinitions, BreakpointTypeDef;
 
 const
   WM_BPUPDATE=WM_USER+1;
@@ -179,6 +179,8 @@ var
 
   dbvmbpinfo: tdbvmbpinfo;
 begin
+  if (listview1.selected=nil) then exit;
+  
   bp:=listview1.selected.data;
   if bp=pointer(-1) then
   begin

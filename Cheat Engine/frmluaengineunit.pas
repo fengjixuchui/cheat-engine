@@ -22,6 +22,9 @@ type
     leImageList: TImageList;
     MenuItem12: TMenuItem;
     MenuItem13: TMenuItem;
+    MenuItem14: TMenuItem;
+    MenuItem15: TMenuItem;
+    N1: TMenuItem;
     miAutoComplete: TMenuItem;
     miSaveCurrentScriptAs: TMenuItem;
     miShowScriptInOutput: TMenuItem;
@@ -73,6 +76,8 @@ type
     procedure MenuItem10Click(Sender: TObject);
     procedure MenuItem11Click(Sender: TObject);
     procedure MenuItem13Click(Sender: TObject);
+    procedure MenuItem14Click(Sender: TObject);
+    procedure MenuItem15Click(Sender: TObject);
     procedure MenuItem2Click(Sender: TObject);
     procedure MenuItem3Click(Sender: TObject);
     procedure MenuItem5Click(Sender: TObject);
@@ -102,6 +107,7 @@ type
       SourceValue: string; var SourceStart, SourceEnd: TPoint;
       KeyChar: TUTF8Char; Shift: TShiftState);
     procedure scLuaCompleterExecute(Sender: TObject);
+    procedure scLuaCompleterKeyCompletePrefix(Sender: TObject);
     procedure scLuaCompleterPositionChanged(Sender: TObject);
     procedure scLuaCompleterSearchPosition(var APosition: integer);
     procedure SQLConnector1AfterConnect(Sender: TObject);
@@ -120,7 +126,10 @@ type
   public
     { public declarations }
     synhighlighter: TSynLuaSyn;
-  end; 
+    procedure reloadHighlighterSettings;
+  end;
+
+procedure ReloadAllLuaEngineHighlighters;
 
 var
   frmLuaEngine: TfrmLuaEngine;
@@ -129,7 +138,8 @@ implementation
 
 { TfrmLuaEngine }
 
-uses luaclass, SynEditTypes, globals, DPIHelper;
+uses luaclass, SynEditTypes, globals, DPIHelper, frmSyntaxHighlighterEditor,
+  frmautoinjectunit;
 
 resourcestring
   rsError = 'Script Error';
@@ -146,6 +156,20 @@ var
   LuaDebugVariables: TStringToStringTree;
   LuaDebugSource: pointer;
 
+procedure ReloadAllLuaEngineHighlighters;
+var
+  i: integer;
+  f: TCustomForm;
+  lef: TfrmLuaEngine absolute f;
+begin
+  for i:=0 to screen.FormCount-1 do
+  begin
+    f:=screen.Forms[i];
+    if f is TfrmLuaEngine then
+      lef.reloadHighlighterSettings;
+  end;
+
+end;
 
 procedure TfrmLuaEngine.Panel2Resize(Sender: TObject);
 begin
@@ -184,10 +208,19 @@ begin
   end
   else
   if keychar='(' then
-    value:=value+'('
+  begin
+    //keep the sourcevalue as well
+    SourceEnd.x:=SourceStart.x+length(value);
+    value:=value+'(';
+
+
+  end
   else
   if keychar='=' then
+  begin
+    SourceEnd.x:=SourceStart.x+length(value);
     value:=value+'=';
+  end;
 
 
 end;
@@ -386,6 +419,11 @@ begin
     on e:exception do
       messagedlg(e.message,mtError,[mbok],0);
   end;
+end;
+
+procedure TfrmLuaEngine.scLuaCompleterKeyCompletePrefix(Sender: TObject);
+begin
+
 end;
 
 procedure TfrmLuaEngine.scLuaCompleterPositionChanged(Sender: TObject);
@@ -1223,6 +1261,8 @@ begin
 
     lua_setPrintOutput(oldprintoutput);
   end;
+
+  mScript.SetFocus;
 end;
 
 procedure TfrmLuaEngine.Button1Click(Sender: TObject);
@@ -1306,6 +1346,8 @@ var
 begin
 
   synhighlighter:=TSynLuaSyn.Create(self);
+  reloadHighlighterSettings;
+
   mscript.Highlighter:=synhighlighter;
 
   fq:=mscript.Font.Quality;
@@ -1384,10 +1426,37 @@ begin
   finddialog1.Execute;
 end;
 
+procedure TfrmLuaEngine.MenuItem14Click(Sender: TObject);
+begin
+  mscript.redo;
+end;
+
+procedure TfrmLuaEngine.reloadHighlighterSettings;
+begin
+  synhighlighter.LoadFromRegistry(HKEY_CURRENT_USER, '\Software\Cheat Engine\Lua Highlighter');
+end;
+
+procedure TfrmLuaEngine.MenuItem15Click(Sender: TObject);
+var
+  frmHighlighterEditor: TfrmHighlighterEditor;
+begin
+  frmHighlighterEditor:=TfrmHighlighterEditor.create(self);
+  synhighlighter.LoadFromRegistry(HKEY_CURRENT_USER, '\Software\Cheat Engine\Lua Highlighter');
+  frmHighlighterEditor.highlighter:=synhighlighter;
+  if frmHighlighterEditor.showmodal=mrok then
+  begin
+    synhighlighter.SaveToRegistry(HKEY_CURRENT_USER, '\Software\Cheat Engine\Lua Highlighter');
+    ReloadAllAutoInjectHighlighters; //AA uses lua too
+    ReloadAllLuaEngineHighlighters;
+  end;
+
+  frmHighlighterEditor.free;
+end;
+
 procedure TfrmLuaEngine.MenuItem2Click(Sender: TObject);
 begin
   if OpenDialog1.Execute then
-    mscript.Lines.LoadFromFile(opendialog1.filename);
+    mscript.Lines.LoadFromFile(opendialog1.filename, true);
 
 end;
 

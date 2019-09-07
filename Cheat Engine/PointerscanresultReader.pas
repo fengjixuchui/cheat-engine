@@ -46,7 +46,7 @@ type
     end;
 
     cacheStart: integer;
-    cacheSize: integer;
+    cacheSize: size_t;
     cache: pointer;
 
     cacheStart2: integer;
@@ -314,8 +314,11 @@ begin
       else
         offset:=wantedoffset;
 
-
-      cachesize:=min(files[j].filesize-offset, systeminfo.dwAllocationGranularity*32);    //normally 2MB
+{$if FPC_FULLVERSION<30200}
+      cachesize:=min(files[j].filesize-offset, systeminfo.dwAllocationGranularity*32);    //normally 2MBZ
+{$else}
+      cachesize:=min(files[j].filesize-offset, qword(systeminfo.dwAllocationGranularity*32));    //normally 2MBZ
+{$endif}
       if cache2<>nil then
         unmapviewoffile(cache2);
 

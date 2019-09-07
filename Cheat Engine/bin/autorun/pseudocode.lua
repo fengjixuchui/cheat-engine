@@ -128,9 +128,16 @@ end
 
 
 plookup['jmp']=function(state)
-  state.address=genericJumpHandler(state, true)
-  return true
+  local newa
+  newa=genericJumpHandler(state, true)
+  if newa==nil then --register based jmp
+    state.branchOrigins[state.address]={} --jumps to 'nowhere and everywhere'
+  else
+    state.address=newa
+    return true
+  end
 end
+
 
 plookup['loop']=function(state)
   genericJumpHandler(state)
@@ -233,6 +240,7 @@ function createBlocks(state)
 
   blocks[1]={}
   blocks[1].start=sal[1]
+  blocks[1].salstartindex=1
 
   blocks[1].getsJumpedToBy=state.branchDestinations[sal[1]]
 
@@ -241,6 +249,7 @@ function createBlocks(state)
     if state.branchDestinations[address] then --first check this
       --this is a destination, so cut off at the previous one
       blocks[#blocks].stop=sal[i-1]
+      blocks[#blocks].salstopindex=i-1
       blocks[#blocks].jumpsTo=state.branchOrigins[blocks[#blocks].stop]
 
       if blocks[#blocks].jumpsTo==nil then
@@ -253,6 +262,7 @@ function createBlocks(state)
 
       blocks[#blocks+1]={}
       blocks[#blocks].start=address
+      blocks[#blocks].salstartindex=i
       blocks[#blocks].getsJumpedToBy=state.branchDestinations[address]
     end
     
@@ -262,8 +272,9 @@ function createBlocks(state)
   end
 
   blocks[#blocks].stop=sal[#sal]
+  blocks[#blocks].salstopindex=#sal
 
-  return blocks
+  return blocks,sal
 end
 
 --[[

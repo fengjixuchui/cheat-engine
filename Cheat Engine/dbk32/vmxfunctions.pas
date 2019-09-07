@@ -72,6 +72,9 @@ const
   VMCALL_GET_STATISTICS = 59;
   VMCALL_WATCH_EXECUTES = 60;
 
+  VMCALL_SETTSCADJUST = 61;
+  VMCALL_SETSPEEDHACK = 62;
+
 
 
   //---
@@ -82,7 +85,7 @@ const
   EPTO_SAVE_STACK  =1 shl 3; //logs contain a 4kb stack snapshot
   EPTO_PMI_WHENFULL=1 shl 4; //Trigger a performance monitor interrupt when full (only use when you have a kernelmode driver)
   EPTO_GROW_WHENFULL=1 shl 5; //Grow if the given size is too small (beware, if DBVM runs out of memory, your system will crash)
-
+  EPTO_INTERRUPT   =1 shl 6; //Trigger a debug interrupt when hit, no logging
 
 type
   TOriginalState=packed record
@@ -323,7 +326,8 @@ type
   TDBVMBreakpoint=record
     VirtualAddress: qword;
     PhysicalAddress: qword;
-    breakoption: integer;
+    breakoption: integer; //1: changeregon bp , nothing else yet
+    originalbyte: byte; //in case of breakoption0 (changeregonbp)
   end;
   PDBVMBreakpoint=^TDBVMBreakpoint;
 
@@ -390,6 +394,8 @@ procedure dbvm_ept_reset;
 
 function dbvm_get_statistics(out statistics: TDBVMStatistics):qword;
 
+procedure dbvm_setTSCAdjust(enabled: boolean; timeout: integer);
+procedure dbvm_speedhack_setSpeed(speed: double);
 
 
 function dbvm_log_cr3values_start: boolean;
@@ -407,6 +413,7 @@ function WriteProcessMemoryWithCloakSupport(hProcess: THandle; lpBaseAddress, lp
 function hasCloakedRegionInRange(virtualAddress: qword; size: integer; out VA:qword; out PA: qword): boolean;
 
 procedure dbvm_getBreakpointList(l: TStrings);
+function dbvm_isBreakpoint(virtualAddress: ptruint; out physicalAddress: qword; out breakoption: integer; var originalbyte: byte): boolean;
 
 var
   vmx_password1: dword;
@@ -442,6 +449,7 @@ var vmcall2 :function(vmcallinfo:pointer; level1pass: dword; secondaryOut: pptru
 
   cloakedregioncache: tmap;
 
+  hassetbp: boolean;
   breakpoints: array of TDBVMBreakpoint;
   breakpointsCS: TCriticalSection=nil;
 
@@ -451,6 +459,41 @@ type
     time: qword;
   end;
   PCloakedMemInfo=^TCloakedMemInfo;
+
+procedure flushCloakedMemoryCache(address: ptruint=0);
+var
+  mi: TMapIterator;
+  cmi: PCloakedMemInfo;
+  id: qword;
+begin
+  address:=address and MAXPHYADDRMASKPB;
+
+  if cloakedregioncache<>nil then
+  begin
+    if address=0 then
+    begin
+      mi:=TMapIterator.Create(cloakedregioncache);
+      mi.First;
+      while not mi.EOM do
+      begin
+        mi.GetData(cmi);
+        freemem(cmi);
+        mi.Next;
+      end;
+
+      mi.free;
+      cloakedregioncache.Clear;
+    end
+    else
+    begin
+      if cloakedregioncache.GetData(address,cmi) then
+      begin
+        freemem(cmi);
+        cloakedregioncache.Delete(address);
+      end;
+    end;
+  end;
+end;
 
 function getCloakedMemory(PhysicalAddress: qword; VirtualAddress: ptruint; destination: pointer; size: integer): integer;
 //read the dbvm cloaked memory (assuming it is cloaked) and returns the number of bytes read. (can be less than size)
@@ -1406,7 +1449,7 @@ var vmcallinfo: packed record
   command: dword;
   PhysicalBase: QWORD;
 end;
-i,j: integer;
+i,j,k: integer;
 begin
   PhysicalBase:=PhysicalBase and MAXPHYADDRMASKPB;
   vmcallinfo.structsize:=sizeof(vmcallinfo);
@@ -1429,6 +1472,37 @@ begin
             cloakedregions[i]:=cloakedregions[i+1];
 
           setlength(cloakedregions, length(cloakedregions)-1);
+
+          //remove changeregonbp's from the list if it had one (already deleted in dbvm)
+          outputdebugstring('Checking if there is a changereg at this location');
+
+          breakpointscs.enter;
+          try
+            j:=0;
+            outputdebugstring(format('length(breakpoints)=%d',[length(breakpoints)]));
+            while j<length(breakpoints) do
+            begin
+              OutputDebugString(format('Is %.8x inside %.8x to %.8x? (BO=%d)',[breakpoints[j].PhysicalAddress, PhysicalBase,PhysicalBase+4095, breakpoints[j].breakoption]));
+
+              if (breakpoints[j].breakoption=integer(bo_ChangeRegister)) and inrangex(breakpoints[j].PhysicalAddress, PhysicalBase, physicalbase+4095) then  //changeregonbp bp and inside this range
+              begin
+                OutputDebugString('Yes, deleting changeregonbp in this range');
+                for k:=j to length(breakpoints)-2 do
+                  breakpoints[k]:=breakpoints[k+1];
+
+                setlength(breakpoints, length(breakpoints)-1);
+              end
+              else
+              begin
+                OutputDebugString('No');
+                inc(j);
+              end;
+            end
+          finally
+            hassetbp:=length(breakpoints)<>0;
+            breakpointscs.leave;
+          end;
+
           exit;
         end;
       end;
@@ -1485,7 +1559,15 @@ var
 
   PhysicalBase: qword;
   i: integer;
+
+  ob: byte;
+  br: size_t;
 begin
+  log('dbvm_cloak_changeregonbp');
+
+  if virtualaddress<>0 then
+    ReadProcessMemory(processhandle, pointer(virtualaddress), @ob,1,br);
+
   vmcallinfo.structsize:=sizeof(vmcallinfo);
   vmcallinfo.level2pass:=vmx_password2;
   vmcallinfo.command:=VMCALL_CLOAK_CHANGEREGONBP;
@@ -1500,6 +1582,8 @@ begin
     breakpoints[length(breakpoints)-1].PhysicalAddress:=PhysicalAddress;
     breakpoints[length(breakpoints)-1].VirtualAddress:=virtualAddress;
     breakpoints[length(breakpoints)-1].BreakOption:=integer(bo_ChangeRegister);
+    breakpoints[length(breakpoints)-1].originalbyte:=ob;
+    hassetbp:=true;
     breakpointscs.leave;
 
     if (VirtualAddress<>0) then
@@ -1524,7 +1608,9 @@ begin
 
     if (GetCurrentThreadId=MainThreadID) and (frmbreakPointList<>nil) and (frmbreakPointList.visible) then
       frmbreakPointList.updatebplist;
-  end;
+  end
+  else
+    log('VMCALL_CLOAK_CHANGEREGONBP failed. it returned '+inttostr(result));
 end;
 
 function dbvm_cloak_removechangeregonbp(PhysicalAddress: QWORD): integer;
@@ -1556,7 +1642,38 @@ begin
   if (GetCurrentThreadId=MainThreadID) and (frmbreakPointList<>nil) and (frmbreakPointList.visible) then
     frmbreakPointList.updatebplist;
 
+  hassetbp:=length(breakpoints)<>0;
+
   breakpointsCS.Leave;
+
+  flushCloakedMemoryCache(PhysicalAddress); //flush out that int3 which will confuse users for half a second
+
+end;
+
+
+function dbvm_isBreakpoint(virtualAddress: ptruint; out physicalAddress: qword; out breakoption: integer; var originalbyte: byte): boolean;
+var i: integer;
+begin
+  result:=false;
+  if hassetbp then
+  begin
+    breakpointsCS.Enter;
+    try
+      for i:=0 to length(breakpoints)-1 do
+      begin
+        if breakpoints[i].VirtualAddress=virtualAddress then
+        begin
+          physicaladdress:=breakpoints[i].PhysicalAddress;
+          breakoption:=breakpoints[i].breakoption;
+          originalbyte:=breakpoints[i].originalbyte;
+          result:=true;
+        end;
+      end;
+    finally
+      breakpointscs.leave;
+    end;
+
+  end;
 end;
 
 procedure dbvm_getBreakpointList(l: TStrings);
@@ -1581,7 +1698,6 @@ begin
   end;
 end;
 
-
 function dbvm_get_statistics(out statistics: TDBVMStatistics):qword;
 var
   vmcallinfo: packed record
@@ -1601,6 +1717,47 @@ begin
   CopyMemory(@statistics.eventCountersAllCPUS[0],@vmcallinfo.eventcounterall,sizeof(int)*56);
 end;
 
+procedure dbvm_setTSCAdjust(enabled: boolean; timeout: integer);
+var vmcallinfo: packed record
+  structsize: dword;
+  level2pass: dword;
+  command: dword;
+  enabled: integer;
+  timeout: integer;
+end;
+begin
+  vmcallinfo.structsize:=sizeof(vmcallinfo);
+  vmcallinfo.level2pass:=vmx_password2;
+  vmcallinfo.command:=VMCALL_SETTSCADJUST;
+  if enabled then
+  begin
+    vmcallinfo.enabled:=1;
+    vmcallinfo.timeout:=timeout;
+  end
+  else
+  begin
+    vmcallinfo.enabled:=0;
+    vmcallinfo.timeout:=2000;
+  end;
+
+  vmcall(@vmcallinfo,vmx_password1);
+end;
+
+procedure dbvm_speedhack_setSpeed(speed: double);
+var vmcallinfo: packed record
+  structsize: dword;
+  level2pass: dword;
+  command: dword;
+  speed: double;
+end;
+begin
+  vmcallinfo.structsize:=sizeof(vmcallinfo);
+  vmcallinfo.level2pass:=vmx_password2;
+  vmcallinfo.command:=VMCALL_SETSPEEDHACK;
+  vmcallinfo.speed:=speed;
+
+  vmcall(@vmcallinfo,vmx_password1);
+end;
 
 
 

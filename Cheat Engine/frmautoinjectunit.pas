@@ -85,6 +85,9 @@ type
     menuAOBInjection: TMenuItem;
     menuFullInjection: TMenuItem;
     MenuItem1: TMenuItem;
+    MenuItem2: TMenuItem;
+    MenuItem3: TMenuItem;
+    miRedo: TMenuItem;
     mifindNext: TMenuItem;
     miCallLua: TMenuItem;
     miNewWindow: TMenuItem;
@@ -114,10 +117,10 @@ type
     Injectincurrentprocess1: TMenuItem;
     Injectintocurrentprocessandexecute1: TMenuItem;
     Find1: TMenuItem;
-    Paste1: TMenuItem;
-    Copy1: TMenuItem;
-    Cut1: TMenuItem;
-    Undo1: TMenuItem;
+    miPaste: TMenuItem;
+    miCopy: TMenuItem;
+    miCut: TMenuItem;
+    miUndo: TMenuItem;
     N6: TMenuItem;
     FindDialog1: TFindDialog;
     undotimer: TTimer;
@@ -129,9 +132,12 @@ type
     procedure menuAOBInjectionClick(Sender: TObject);
     procedure menuFullInjectionClick(Sender: TObject);
     procedure MenuItem1Click(Sender: TObject);
+    procedure MenuItem2Click(Sender: TObject);
+    procedure MenuItem3Click(Sender: TObject);
     procedure mifindNextClick(Sender: TObject);
     procedure miCallLuaClick(Sender: TObject);
     procedure miNewWindowClick(Sender: TObject);
+    procedure miRedoClick(Sender: TObject);
     procedure ReplaceDialog1Find(Sender: TObject);
     procedure ReplaceDialog1Replace(Sender: TObject);
     procedure Save1Click(Sender: TObject);
@@ -157,14 +163,14 @@ type
     procedure Close1Click(Sender: TObject);
     procedure Injectincurrentprocess1Click(Sender: TObject);
     procedure Injectintocurrentprocessandexecute1Click(Sender: TObject);
-    procedure Cut1Click(Sender: TObject);
-    procedure Copy1Click(Sender: TObject);
-    procedure Paste1Click(Sender: TObject);
+    procedure miCutClick(Sender: TObject);
+    procedure miCopyClick(Sender: TObject);
+    procedure miPasteClick(Sender: TObject);
     procedure Find1Click(Sender: TObject);
     procedure FindDialog1Find(Sender: TObject);
     procedure AAPref1Click(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
-    procedure Undo1Click(Sender: TObject);
+    procedure miUndoClick(Sender: TObject);
   private
     { Private declarations }
 
@@ -211,6 +217,8 @@ type
     callbackroutine: TCallbackroutine;
     CustomTypeCallback: TCustomCallbackroutine;
     injectintomyself: boolean;
+
+    procedure reloadHighlighterSettings;
     procedure addTemplate(id: integer);
     procedure removeTemplate(id: integer);
     procedure loadfile(filename: string);
@@ -232,13 +240,16 @@ procedure unregisterAutoAssemblerTemplate(id: integer);
 function GetUniqueAOB(mi: TModuleInfo; address: ptrUint; codesize: Integer; var resultOffset: Integer) : string;
 
 
+procedure ReloadAllAutoInjectHighlighters;
+
 implementation
 
 
 uses frmAAEditPrefsUnit,MainUnit,memorybrowserformunit,APIhooktemplatesettingsfrm,
   Globals, Parsers, MemoryQuery, GnuAssembler, LuaCaller, SynEditTypes, CEFuncProc,
   StrUtils, types, ComCtrls, LResources, NewKernelHandler, MainUnit2, Assemblerunit,
-  autoassembler,  registry, luahandler, memscan, foundlisthelper, ProcessHandlerUnit;
+  autoassembler,  registry, luahandler, memscan, foundlisthelper, ProcessHandlerUnit,
+  frmLuaEngineUnit, frmSyntaxHighlighterEditor;
 
 resourcestring
   rsExecuteScript = 'Execute script';
@@ -272,7 +283,20 @@ var
   AutoAssemblerTemplates: TAutoAssemblerTemplates;
 
 
+procedure ReloadAllAutoInjectHighlighters;
+var
+  i: integer;
+  f: TCustomForm;
+  aif: TfrmAutoInject absolute f;
+begin
+  for i:=0 to screen.FormCount-1 do
+  begin
+    f:=screen.Forms[i];
+    if f is TfrmAutoInject then
+      aif.reloadHighlighterSettings;
+  end;
 
+end;
 
 function registerAutoAssemblerTemplate(name: string; m: TAutoAssemblerTemplateCallback): integer;
 var i: integer;
@@ -553,7 +577,7 @@ end;
 procedure TfrmAutoInject.loadFile(filename: string);
 begin
   assemblescreen.Lines.Clear;
-  assemblescreen.Lines.LoadFromFile(filename);
+  assemblescreen.Lines.LoadFromFile(filename, true);
   savedialog1.FileName:=filename;
   assemblescreen.AfterLoadFromFile;
 
@@ -585,6 +609,11 @@ begin
   f.scriptmode:=ScriptMode;
 
   f.show;
+end;
+
+procedure TfrmAutoInject.miRedoClick(Sender: TObject);
+begin
+  assemblescreen.Redo;
 end;
 
 procedure TfrmAutoInject.ReplaceDialog1Find(Sender: TObject);
@@ -821,10 +850,12 @@ begin
       add('');
       add(addressstring+':');
       add('jmp newmem'+inttostr(injectnr)+'');
-      while codesize>5 do
+      if codesize>5 then
       begin
-        add('nop');
-        dec(codesize);
+        if codesize-5>1 then
+          add('nop '+inttohex(codesize-5,1))
+        else
+          add('nop');
       end;
 
       add('returnhere'+inttostr(injectnr)+':');
@@ -987,6 +1018,7 @@ begin
   end;
 
   jumppart.Add('jmp '+inttohex(addressto,8));
+
 
   for i:=jumpsize to x-y-1 do
     jumppart.Add('nop');
@@ -1744,7 +1776,7 @@ begin
   CPPHighlighter:=TSynCppSyn.create(self);
   LuaHighlighter:=TSynLuaSyn.Create(self);
 
-
+  reloadHighlighterSettings;
 
   assembleSearch:=TSyneditSearch.Create;
 
@@ -2059,17 +2091,17 @@ begin
   injectscript(true);
 end;
 
-procedure TfrmAutoInject.Cut1Click(Sender: TObject);
+procedure TfrmAutoInject.miCutClick(Sender: TObject);
 begin
   assemblescreen.CutToClipboard;
 end;
 
-procedure TfrmAutoInject.Copy1Click(Sender: TObject);
+procedure TfrmAutoInject.miCopyClick(Sender: TObject);
 begin
   assemblescreen.CopyToClipboard;
 end;
 
-procedure TfrmAutoInject.Paste1Click(Sender: TObject);
+procedure TfrmAutoInject.miPasteClick(Sender: TObject);
 begin
   assemblescreen.PasteFromClipboard;
 end;
@@ -2141,7 +2173,7 @@ begin
   end;
 end;
 
-procedure TfrmAutoInject.Undo1Click(Sender: TObject);
+procedure TfrmAutoInject.miUndoClick(Sender: TObject);
 begin
   assemblescreen.Undo;
 end;
@@ -2297,10 +2329,12 @@ begin
       add('');
       add('address'+nr+':');
       add('  jmp newmem'+nr+'');
-      while codesize>5 do
+      if codesize>5 then
       begin
-        add('  nop');
-        dec(codesize);
+        if codesize-5>1 then
+          add('  nop '+inttohex(codesize-5,1))
+        else
+          add('  nop');
       end;
 
       add('return'+nr+':');
@@ -2415,6 +2449,46 @@ end;
 procedure TfrmAutoInject.MenuItem1Click(Sender: TObject);
 begin
   ReplaceDialog1.execute;
+end;
+
+procedure TfrmAutoInject.reloadHighlighterSettings;
+begin
+  LuaHighlighter.LoadFromRegistry(HKEY_CURRENT_USER, '\Software\Cheat Engine\Lua Highlighter');
+  AAHighlighter.LoadFromRegistry(HKEY_CURRENT_USER, '\Software\Cheat Engine\AA Highlighter');
+end;
+
+procedure TfrmAutoInject.MenuItem2Click(Sender: TObject);
+var
+  frmHighlighterEditor: TfrmHighlighterEditor;
+begin
+  frmHighlighterEditor:=TfrmHighlighterEditor.create(self);
+  LuaHighlighter.LoadFromRegistry(HKEY_CURRENT_USER, '\Software\Cheat Engine\Lua Highlighter');
+  frmHighlighterEditor.highlighter:=LuaHighlighter;
+  if frmHighlighterEditor.showmodal=mrok then
+  begin
+    LuaHighlighter.SaveToRegistry(HKEY_CURRENT_USER, '\Software\Cheat Engine\Lua Highlighter');
+    reloadHighlighterSettings;
+    ReloadAllLuaEngineHighlighters;
+  end;
+
+  frmHighlighterEditor.free;
+
+end;
+
+procedure TfrmAutoInject.MenuItem3Click(Sender: TObject);
+var
+  frmHighlighterEditor: TfrmHighlighterEditor;
+begin
+  frmHighlighterEditor:=TfrmHighlighterEditor.create(self);
+  AAHighlighter.LoadFromRegistry(HKEY_CURRENT_USER, '\Software\Cheat Engine\AA Highlighter');
+  frmHighlighterEditor.highlighter:=AAHighlighter;
+  if frmHighlighterEditor.showmodal=mrok then
+  begin
+    AAHighlighter.SaveToRegistry(HKEY_CURRENT_USER, '\Software\Cheat Engine\AA Highlighter');
+    ReloadAllAutoInjectHighlighters;
+  end;
+
+  frmHighlighterEditor.free;
 end;
 
 procedure GenerateAOBInjectionScript(script: TStrings; address: string; symbolname: string);
@@ -2577,8 +2651,14 @@ begin
       add('');
       add(symbolNameWithOffset + ':');
       add('  jmp newmem' + nr + '');
-      for i := 6 to codesize do
-        add('  nop');
+      if codesize>5 then
+      begin
+        if codesize-5>1 then
+          add('  nop '+inttohex(codesize-5,1))
+        else
+          add('  nop');
+      end;
+
       add('return' + nr + ':');
       add('registersymbol(' + symbolName + ')');
       add('');

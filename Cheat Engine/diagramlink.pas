@@ -33,6 +33,10 @@ type
     fmaxx: integer; //set after render
     fmaxy: integer;
 
+    fOnDblClick: TNotifyEvent;
+    fOnDestroy: TNotifyEvent;
+    ftag: qword;
+
 
 
     function getYPosFromX(x: single; linestart: tpoint; lineend: tpoint): double;
@@ -82,9 +86,14 @@ type
     procedure setOriginDescriptor(d: TDiagramBlockSideDescriptor);
     procedure setDestinationDescriptor(d: TDiagramBlockSideDescriptor);
 
+    procedure saveToStream(f: tstream);
+    procedure loadFromStream(f: tstream; blocks: tlist);
+
 
     property PlotPoints[index: integer]: TPoint read getPoint write updatePointPosition;
+    property OnDestroy: TNotifyEvent read fOnDestroy write fOnDestroy;
     constructor create(diagramconfig: TDiagramConfig; _origin,_destination: TDiagramBlockSideDescriptor);
+    constructor createFromStream(diagramconfig: TDiagramConfig; f: tstream; blocks: TList);
     destructor destroy; override;
   published
     property OriginBlock: TDiagramBlock read origin.Block write origin.block;
@@ -97,11 +106,13 @@ type
     property Name: string read fName write fName;
     property maxx: integer read fmaxx;
     property maxy: integer read fmaxy;
+    property OnDblClick: TNotifyEvent read fOnDblClick write fOnDblClick;
+    property Tag: qword read ftag write ftag;
   end;
 
 implementation
 
-uses math, types;
+uses math, types, typinfo;
 
 var
   PlotPointVertices:array [0..3] of array [0..1] of single;
@@ -179,8 +190,6 @@ begin
   begin
     slope:=deltay/deltax;
     result:=slope*double(x-linestart.x)+double(linestart.y);
-
-
   end;
 end;
 
@@ -195,9 +204,12 @@ begin
   if deltay=0 then
     result:=Infinity
   else
+  begin
     slope:=deltax/deltay;
+    result:=slope*double(y-linestart.y)+double(linestart.x);
+  end;
 
-  result:=slope*double(y-linestart.y)+double(linestart.x);
+
 
   // config.canvas.Pixels[trunc(result),y]:=$00ff00;
 end;
@@ -550,6 +562,9 @@ begin
     RedGreenBlue(linecolor,r,g,b);
     glColor3ub(r,g,b);
     glLineWidth(LineThickness*config.zoom);
+    oldw:=0;
+    oldc:=0;
+    c:=nil;
   end
   else
   begin
@@ -558,7 +573,7 @@ begin
     oldw:=c.pen.Width;
     oldc:=c.pen.color;
 
-    c.pen.width:=ceil(config.LineThickness*config.zoom);
+    c.pen.width:=ceil(LineThickness*config.zoom);
     c.pen.color:=LineColor;
   end;
 
@@ -857,6 +872,103 @@ begin
   destination:=d;
 end;
 
+procedure TDiagramLink.saveToStream(f: tstream);
+var i: integer;
+begin
+  f.WriteAnsiString('LNK');
+
+  f.WriteAnsiString(fname);
+
+  f.WriteDWord(origin.block.BlockID);
+  f.WriteByte(integer(origin.side));
+  f.WriteDWord(integer(origin.sideposition));
+
+  f.WriteDWord(destination.block.BlockID);
+  f.WriteByte(integer(destination.side));
+  f.WriteDWord(integer(destination.sideposition));
+
+  f.WriteDWord(length(points));
+  for i:=0 to length(points)-1 do
+  begin
+    f.writeDword(points[i].x);
+    f.writeDword(points[i].y);
+  end;
+
+  f.writebyte(ifthen(useCustomColor,1,0));
+  if useCustomColor then f.WriteDWord(fCustomColor);
+
+  f.writebyte(ifthen(useCustomLineThickness,1,0));
+  if useCustomLineThickness then f.WriteDWord(fCustomLineThickness);
+
+  f.writebyte(ifthen(useCustomArrowSize,1,0));
+  if useCustomArrowSize then f.WriteDWord(fCustomArrowSize);
+
+  f.writebyte(ifthen(useCustomArrowStyles,1,0));
+  if useCustomArrowStyles then f.WriteByte(byte(fCustomArrowStyles));
+
+end;
+
+procedure TDiagramLink.loadFromStream(f: tstream; blocks: tlist);
+  function idToBlock(id: integer): TDiagramBlock;
+  var
+    i: integer;
+    b: TDiagramBlock;
+  begin
+    result:=nil;
+
+    if (id<blocks.count) and (TDiagramBlock(blocks[id]).BlockID=id) then exit(TDiagramBlock(blocks[id]));
+
+    //unexpected blockorder
+
+    for i:=0 to blocks.count-1 do
+    begin
+      b:=TDiagramBlock(blocks[i]);
+      if b.blockid=id then
+        exit(b);
+    end;
+  end;
+
+var  i: integer;
+begin
+  if f.ReadAnsiString<>'LNK' then raise exception.create('Link read error');
+
+  fname:=f.ReadAnsiString;
+
+  origin.block:=idToBlock(f.ReadDWord);
+  if origin.block=nil then
+    raise exception.create('Link read error. Origin for a link not found');
+
+  origin.side:=TDiagramBlockSide(f.ReadByte);
+  origin.sideposition:=f.ReadDWord;
+
+  destination.block:=idToBlock(f.ReadDWord);
+  if destination.block=nil then
+    raise exception.create('Link read error. Destination for a link not found');
+  destination.side:=TDiagramBlockSide(f.ReadByte);
+  destination.sideposition:=f.ReadDWord;
+
+  setlength(points, f.ReadDWord);
+  for i:=0 to length(points)-1 do
+  begin
+    points[i].x:=f.ReadDWord;
+    points[i].y:=f.ReadDWord;
+  end;
+
+  useCustomColor:=f.readbyte=1;
+  if useCustomColor then fCustomColor:=f.ReadDWord;
+
+  useCustomLineThickness:=f.readbyte=1;
+  if useCustomLineThickness then fCustomLineThickness:=f.ReadDWord;
+
+  useCustomArrowSize:=f.readbyte=1;
+  if useCustomArrowSize then fCustomArrowSize:=f.ReadDWord;
+
+  useCustomArrowStyles:=f.readbyte=1;
+  if useCustomArrowStyles then fCustomArrowStyles:=TArrowStyles(f.ReadByte);
+
+
+end;
+
 constructor TDiagramLink.create(diagramconfig: TDiagramConfig; _origin,_destination: TDiagramBlockSideDescriptor);
 begin
   config:=diagramconfig;
@@ -865,8 +977,17 @@ begin
   destination:=_destination;
 end;
 
+constructor TDiagramLink.createFromStream(diagramconfig: TDiagramConfig; f: tstream; blocks: TList);
+begin
+  config:=diagramconfig;
+  loadFromStream(f,blocks);
+end;
+
 destructor TDiagramLink.destroy;
 begin
+  if assigned(fOnDestroy) then
+    fOnDestroy(self);
+
   inherited destroy;
 end;
 

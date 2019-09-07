@@ -52,10 +52,12 @@ type
     compareToSavedScan: boolean;
     currentlySelectedSavedResultname: string; //I love long variable names
 
+    cbCompareToSavedScan: record
+      visible: boolean;
+    end;
     lblcompareToSavedScan: record
       Caption: string;
       Visible: boolean;
-      left: integer;
     end;
 
 
@@ -84,6 +86,22 @@ type
       checked: boolean;
       visible: boolean;
     end;
+
+    cbnot: record
+      checked: boolean;
+      visible: boolean;
+    end;
+
+    cbLuaformula: record
+      checked: boolean;
+      visible: boolean;
+    end;
+
+    cbRepeatUntilStopped: record
+      checked: boolean;
+      visible: boolean;
+    end;
+
 
     cbCaseSensitive: record
       checked: boolean;
@@ -180,10 +198,6 @@ type
     foundlistDisplayOverride: integer;
 
 
-    cbNot:record
-      Checked: boolean;
-    end;
-
     cbfloatSimple: record
       Checked: boolean;
     end;
@@ -231,6 +245,16 @@ type
 
   { TMainForm }
 
+  TFreezeThread=class(TThread)
+  private
+    fAddressList: TAddresslist;
+    freezeInterval: integer;
+  public
+    procedure Execute; override;
+    constructor Create(AddressList: TAddresslist; interval: integer);
+  end;
+
+
   TMainForm = class(TForm)
     actOpenLuaEngine: TAction;
     actOpenDissectStructure: TAction;
@@ -251,10 +275,16 @@ type
     cbpercentage: TCheckBox;
     cbNot: TCheckBox;
     cbCodePage: TCheckBox;
+    cbRepeatUntilStopped: TCheckBox;
+    cbCompareToSavedScan: TCheckBox;
+    cbLuaFormula: TCheckBox;
     ColorDialog1: TColorDialog;
     CreateGroup: TMenuItem;
     FromAddress: TEdit;
     andlabel: TLabel;
+    lblcompareToSavedScan: TLabel;
+    miFoundListPreferences: TMenuItem;
+    N2: TMenuItem;
     mfImageList: TImageList;
     lblSigned: TLabel;
     MainMenu2: TMainMenu;
@@ -289,7 +319,6 @@ type
     Label1: TLabel;
     Label2: TLabel;
     Label54: TLabel;
-    lblcompareToSavedScan: TLabel;
     lblSH0: TLabel;
     lblSH20: TLabel;
     MenuItem1: TMenuItem;
@@ -495,8 +524,10 @@ type
     procedure actOpenDissectStructureExecute(Sender: TObject);
     procedure actOpenLuaEngineExecute(Sender: TObject);
     procedure Address1Click(Sender: TObject);
+    procedure cbCompareToSavedScanChange(Sender: TObject);
     procedure cbPercentageOnChange(Sender: TObject);
     procedure cbCodePageChange(Sender: TObject);
+    procedure cbRepeatUntilStoppedChange(Sender: TObject);
     procedure cbUnicodeChange(Sender: TObject);
     procedure Copyselectedaddresses1Click(Sender: TObject);
     procedure EnableLCLClick(Sender: TObject);
@@ -513,9 +544,11 @@ type
     procedure CreateGroupClick(Sender: TObject);
     procedure Foundlist3SelectItem(Sender: TObject; Item: TListItem;
       Selected: boolean);
+    procedure gbScanOptionsChangeBounds(Sender: TObject);
     procedure Label3Click(Sender: TObject);
     procedure MenuItem12Click(Sender: TObject);
     procedure MenuItem15Click(Sender: TObject);
+    procedure miFoundListPreferencesClick(Sender: TObject);
     procedure miAutoAssembleErrorMessageClick(Sender: TObject);
     procedure miHelpClick(Sender: TObject);
     procedure miLuaDocumentationClick(Sender: TObject);
@@ -586,6 +619,7 @@ type
     procedure Panel5Resize(Sender: TObject);
     procedure pmTablistPopup(Sender: TObject);
     procedure pmValueTypePopup(Sender: TObject);
+    procedure ProcessLabelClick(Sender: TObject);
     procedure rbAllMemoryChange(Sender: TObject);
     procedure rbFsmAlignedChange(Sender: TObject);
     procedure Save1Click(Sender: TObject);
@@ -686,6 +720,7 @@ type
     procedure actOpenProcesslistExecute(Sender: TObject);
     procedure Type1Click(Sender: TObject);
   private
+    repeatscantimer: TTimer;
     onetimeonly: boolean; //to protect against make mainform visible (.show)
 
     scantimestart, scantimefinish: int64;
@@ -748,12 +783,23 @@ type
       vartype: TVariableType;
     end;
 
+    foundlistColors: record
+      NormalValueColor: TColor;
+      ChangedValueColor: TColor;
+      StaticColor: TColor;
+      DynamicColor: TColor;
+    end;
+
 
     saveGotCanceled: boolean; //set to true if the last save button click was canceled
 
     UserDefinedTableName: string; //set when a user opens a table (when set the filename prediction will be turned off)
 
     speedhackDisableTimer: TTimer;
+    boundsupdater: TTimer;
+
+    freezeThread: TFreezeThread;
+
     procedure CheckForSpeedhackKey(sender: TObject);
 
     procedure doNewScan;
@@ -779,6 +825,7 @@ type
     procedure scanEpilogue(canceled: boolean);
     procedure CancelbuttonClick(Sender: TObject);
     procedure CancelbuttonenablerInterval(Sender: TObject);
+    procedure repeatScanTimerTimer(sender: TObject);
 
     procedure changeScriptCallback(memrec: TMemoryRecord; script: string;
       changed: boolean);
@@ -844,8 +891,13 @@ type
     procedure createGroupConfigButton;
     procedure destroyGroupConfigButton;
 
+    procedure BoundsUpdate(sender: TObject);
+    procedure SpawnBoundsUpdater;
+
     procedure MemscanGuiUpdate(sender: TObject; totaladdressestoscan: qword; currentlyscanned: qword; foundcount: qword);
 
+    function getUseThreadToFreeze: boolean;
+    procedure setUseThreadToFreeze(state: boolean);
   public
     { Public declarations }
     addresslist: TAddresslist;
@@ -868,7 +920,7 @@ type
     fronttext: string;
 
 
-    aprilfools: boolean;
+
     editedsincelastsave: boolean;
 
     autoattachlist: TStringList;
@@ -951,12 +1003,16 @@ type
     property About1: TMenuItem read miAbout write miAbout;
     property Help1: TMenuItem read miHelp write miHelp;
     property OnProcessOpened: TProcessOpenedEvent read fOnProcessOpened write fOnProcessOpened;
+    property UseThreadToFreeze: boolean read getUseThreadToFreeze write setUseThreadToFreeze;
   end;
 
 var
   MainForm: TMainForm;
   ToggleWindows: TTogglewindows;
   AutoAttachThread: TAutoAttachThread;
+
+resourcestring
+  strPhysicalMemory = 'Physical Memory';
 
 implementation
 
@@ -973,7 +1029,8 @@ uses mainunit2, ProcessWindowUnit, MemoryBrowserFormUnit, TypePopup, HotKeys,
   frmNetworkDataCompressionUnit, ProcessHandlerUnit, ProcessList, pointeraddresslist,
   PointerscanresultReader, Parsers, Globals, GnuAssembler, xinput, DPIHelper,
   multilineinputqueryunit, winsapi, LuaClass, Filehandler, feces,
-  frmDBVMWatchConfigUnit, frmDotNetObjectListUnit, ceregistry, UnexpectedExceptionsHelper;
+  frmDBVMWatchConfigUnit, frmDotNetObjectListUnit, ceregistry, UnexpectedExceptionsHelper,
+  frmFoundlistPreferencesUnit, fontSaveLoadRegistry, cheatecoins;
 
 resourcestring
   rsInvalidStartAddress = 'Invalid start address: %s';
@@ -1000,7 +1057,7 @@ resourcestring
   strErrorwhileOpeningProcess = 'Error while opening this process';
   strKeepList = 'Keep the current address list/code list?';
   strInfoAboutTable = 'Info about this table:';
-  strPhysicalMemory = 'Physical Memory';
+
   strSaferPhysicalMemory = 'Safer memory access';
   rsThereAreOneOrMoreAutoAssemblerEntriesOrCodeChanges =
     'There are one or more auto assembler entries or code changes enabled in this table. Do you want them disabled? (without '
@@ -1056,7 +1113,6 @@ resourcestring
   strMorePointers2 =
     'You have selected one or more pointers. Do you want to change them as well?';
   strNotAValidValue = 'This is not an valid value';
-  rsComparingToF = 'Comparing to first scan results';
   rsTheRecordWithDescriptionHasAsInterpretableAddressT =
     'The record with description ''%s'' has as interpretable address ''%s''. The recalculation will change it to %s. Do you '
     + 'want to edit it to the new address?';
@@ -1187,6 +1243,7 @@ resourcestring
   rsInvalidScanFolder = '%s is not accessible like it should.  Please '
     +'configure a proper location in the settings';
   rsProcessing = '<Processing>';
+  rsCompareToSavedScan = 'Compare to first/saved scan';
 
 var
   ncol: TColor;
@@ -1245,6 +1302,54 @@ procedure TToggleWindows.Execute;
 begin
   toggleotherwindows;
   togglewindows := nil;
+end;
+
+
+//--------------TFreezeThread------------
+procedure TFreezeThread.Execute;
+begin
+  while not terminated do
+  begin
+    faddresslist.ApplyFreeze;
+    sleep(freezeInterval);
+  end;
+end;
+
+constructor TFreezeThread.Create(AddressList: TAddresslist; interval: integer);
+begin
+  fAddressList:=addressList;
+  freezeInterval:=interval;
+  inherited create(false);
+end;
+
+//--------------TMainThread------------
+
+function TMainForm.getUseThreadToFreeze: boolean;
+begin
+  result:=freezeThread<>nil;
+end;
+
+procedure TMainForm.setUseThreadToFreeze(state: boolean);
+begin
+  if freezethread<>nil then
+  begin
+    if state then //update?
+    begin
+      if freezethread.freezeInterval<>freezetimer.interval then
+        freezethread.freezeInterval:=freezetimer.interval;
+    end
+    else
+      freeandnil(freezethread);
+  end
+  else
+  begin
+    if state then
+      freezethread:=TFreezeThread.Create(addresslist,freezetimer.interval);
+  end;
+
+
+
+  freezetimer.enabled:=not state;
 end;
 
 procedure TMainForm.setIsProtected(p: boolean); //super unhackable protection yeeeeeh
@@ -1754,10 +1859,14 @@ begin
 
         if btnNextScan.Enabled then
         begin
-          scantype.ItemIndex := scantype.Items.IndexOf(StrChangedValue);
-          scantype.OnChange(scantype);
+          i:=scantype.Items.IndexOf(StrChangedValue);
+          if i<>-1 then
+          begin
+            scantype.ItemIndex := i;
+            scantype.OnChange(scantype);
 
-          btnNextScan.click;
+            btnNextScan.click;
+          end;
         end
         else
           Errorbeep;
@@ -1772,10 +1881,14 @@ begin
 
         if btnNextScan.Enabled then
         begin
-          scantype.ItemIndex := scantype.Items.IndexOf(StrUnchangedValue);
-          scantype.OnChange(scantype);
+          i:=scantype.Items.IndexOf(StrUnchangedValue);
+          if i<>-1 then
+          begin
+            scantype.ItemIndex := i;
+            scantype.OnChange(scantype);
 
-          btnNextScan.click;
+            btnNextScan.click;
+          end;
         end
         else
           Errorbeep;
@@ -1928,12 +2041,23 @@ begin
 end;
 
 procedure TMainForm.ShowError(var message: TMessage);
-var err: pchar;
+var
+  err: pchar;
+  errs: string;
 begin
   err:=pchar(message.lParam);
+
   if err<>nil then
   begin
-    MessageDlg(err, mtError, [mbOK], 0);
+    errs:=err;
+
+
+
+    if (errs='Access violation') and (miEnableLCLDebug.checked) then
+      errs:=errs+#13#10'Please send the errorlog.txt file to Dark Byte. Thanks';
+
+
+    MessageDlg(errs, mtError, [mbOK], 0);
     freememandnil(err);
   end
   else
@@ -2102,6 +2226,7 @@ begin
   undoscan.Enabled := False;
 
   cbNot.Enabled:=false;
+  cbLuaFormula.enabled:=false;
 end;
 
 procedure TMainForm.enableGui(isnextscan: boolean);
@@ -2140,6 +2265,7 @@ begin
   cbHexadecimal.Enabled := True;
   cbCaseSensitive.Enabled := True;
   cbNot.enabled:=true;
+  cbLuaFormula.enabled:=true;
 
 
   scanvalue.Visible := True;
@@ -2183,9 +2309,18 @@ procedure TMainForm.exceptionhandler(Sender: TObject; E: Exception);
 var err: pchar;
 begin
   //unhandled exeption. Also clean lua stack
+
   getmem(err, length(e.Message)+1);
   strcopy(err, pchar(e.message));
   err[length(e.message)]:=#0;
+
+
+  if miEnableLCLDebug.checked then
+  begin
+    DebugLn('Exception '+e.Message);
+    DumpExceptionBackTrace;
+
+  end;
 
   PostMessage(handle, wm_showerror, 0, ptruint(err));
 end;
@@ -2345,21 +2480,17 @@ begin
         ScanType.Items.Add(strDecreasedValueBy);
         ScanType.Items.add(strChangedValue);
         ScanType.Items.Add(strUnchangedValue);
+        ScanType.Items.Add(strIgnoreValue);
 
-        if compareToSavedScan then
-          ScanType.Items.Add(strCompareToLastScan)
+
+        cbCompareToSavedScan.visible:=true;
+        t:=tstringlist.create;
+        if memscan.getsavedresults(t)>1 then
+          cbCompareToSavedScan.caption:=rsCompareToSavedScan
         else
-        begin
-          t := TStringList.Create;
-          if memscan.getsavedresults(t) > 1 then
-            ScanType.Items.Add(strcompareToSavedScan)
-          else
-            ScanType.Items.Add(strCompareToFirstScan);
+          cbCompareToSavedScan.caption:=strCompareToFirstScan;
 
-          freeandnil(t);
-
-        end;
-
+        t.free;
       end
       else
       begin
@@ -2425,7 +2556,7 @@ begin
 
     if (scantype.Text = strIncreasedValue) or (scantype.Text = strDecreasedValue) or
       (scantype.Text = strChangedValue) or (scantype.Text = strUnchangedValue) or
-      (scantype.Text = strUnknownInitialValue) then
+      (scantype.Text = strUnknownInitialValue) or (scantype.Text = strIgnoreValue) then
     begin
       Scantext.Visible := False;
       Scanvalue.Visible := False;
@@ -2463,6 +2594,11 @@ begin
     end;
 
     UpdateFloatRelatedPositions;
+
+
+    cbRepeatUntilStopped.visible:=GetScanType=soUnchanged;
+
+    cbLuaFormula.visible:=(GetScanType=soExactValue) and (getVarType in [vtByte, vtWord, vtDword, vtQword, vtSingle, vtDouble, vtCustom, vtAll])
 
   finally
     scantype.OnChange := old;
@@ -2663,6 +2799,7 @@ var
   DoNotOpenAssociatedTable: boolean;
   //set to true if the table had AA scripts enabled or the code list had nopped instruction
 begin
+  if aprilfools then decreaseCheatECoinCount;
 
   DoNotOpenAssociatedTable:=false;
 
@@ -2718,7 +2855,8 @@ begin
     //disable everything
 
     foundcount := 0;
-    foundlist.Clear;
+    if foundlist<>nil then
+      foundlist.Clear;
 
     btnNewScan.Caption := strFirstScan;
 
@@ -2754,6 +2892,7 @@ begin
 
       processlabel.Caption := strError;
       raise Exception.Create(strErrorWhileOpeningProcess);
+
     end
     else
     begin
@@ -2831,6 +2970,9 @@ begin
   else
   begin
     cbSpeedhack.Checked:=false;
+    addresslist.disableAllWithoutExecute;
+    for i := 0 to length(AdvancedOptions.code) - 1 do
+      AdvancedOptions.code[i].changed := False;
   end;
 
   enablegui(btnNextScan.Enabled);
@@ -2997,9 +3139,85 @@ begin
   addresslist.doAddressChange;
 end;
 
+procedure TMainForm.cbCompareToSavedScanChange(Sender: TObject);
+var
+  s: tstringlist;
+  l: TfrmSelectionList;
+
+begin
+  if cbCompareToSavedScan.checked then
+  begin
+    s := TStringList.Create;
+    try
+      if (memscan.getsavedresults(s) > 1) then
+      begin
+        //popup a window where the user can select the scanresults
+        //currentlySelectedSavedResultname
+        l := TfrmSelectionList.Create(self, s);
+        l.Caption := rsSavedScanResults;
+        l.label1.Caption := rsSelectTheSavedScanResultFromTheListBelow;
+        l.ItemIndex := 0;
+
+        if (l.showmodal = mrOk) and (l.ItemIndex <> -1) then
+          currentlySelectedSavedResultname := l.selected
+        else
+          exit;
+      end
+      else
+        currentlySelectedSavedResultname := 'First';
+
+      compareToSavedScan := True;
+      lblcompareToSavedScan.Visible := s.Count>1;
+      lblcompareToSavedScan.Caption := '('+currentlySelectedSavedResultname+')';
+    finally
+      freeandnil(s);
+    end;
+
+
+    try
+      if PreviousResults<>nil then
+        freeandnil(PreviousResults);
+
+      PreviousResults:=TSavedScanHandler.create(memscan.getScanFolder, currentlySelectedSavedResultname);
+      PreviousResults.AllowNotFound:=true;
+      PreviousResults.AllowRandomAccess:=true;
+      foundlist3.Refresh;
+    except
+    end;
+
+    foundlist3.Column[2].Caption:=rsSaved;
+
+  end
+  else
+  begin
+    compareToSavedScan := False;
+    lblcompareToSavedScan.Visible := False;
+
+    try
+      if PreviousResults<>nil then
+        freeandnil(PreviousResults);
+
+      PreviousResults:=TSavedScanHandler.create(memscan.getScanFolder, 'TMP');
+      PreviousResults.AllowNotFound:=true;
+      PreviousResults.AllowRandomAccess:=true;
+      foundlist3.Refresh;
+    except
+    end;
+
+    foundlist3.Column[2].Caption:=rsPrevious;
+
+  end;
+end;
+
 procedure TMainForm.cbCodePageChange(Sender: TObject);
 begin
   if cbCodePage.checked then cbunicode.Checked:=false;
+end;
+
+procedure TMainForm.cbRepeatUntilStoppedChange(Sender: TObject);
+begin
+  if (cbRepeatUntilStopped.checked=false) and (repeatscantimer<>nil) then
+    freeandnil(repeatscantimer);
 end;
 
 procedure TMainForm.cbUnicodeChange(Sender: TObject);
@@ -3008,19 +3226,23 @@ begin
 end;
 
 procedure TMainForm.Copyselectedaddresses1Click(Sender: TObject);
-var    i: qword;
-    temp: string;
+var
+  i: ptruint;
+  temp: string;
 begin
-     if foundlist3.SelCount = 1 then  clipboard.AsText := symhandler.getNameFromAddress(StrToQWordEx('$'+foundlist3.Items[foundlist3.itemindex].Caption))
-     else if foundlist3.SelCount > 1 then
-     begin
-        for i:=0 to foundlist3.Items.count-1 do
-        begin
-          if foundlist3.items[i].Selected then
-              temp := temp + symhandler.getNameFromAddress(StrToQWordEx('$'+foundlist3.Items[i].Caption)) + sLineBreak;
-        end;
-        clipboard.AsText := temp;
-     end;
+  temp:='';
+  if foundlist3.SelCount = 1 then
+    clipboard.AsText := symhandler.getNameFromAddress(StrToQWordEx('$'+foundlist3.Items[foundlist3.itemindex].Caption))
+  else
+  if foundlist3.SelCount > 1 then
+  begin
+    for i:=0 to foundlist3.Items.count-1 do
+    begin
+      if foundlist3.items[i].Selected then
+        temp := temp + symhandler.getNameFromAddress(StrToQWordEx('$'+foundlist3.Items[i].Caption)) + sLineBreak;
+    end;
+    clipboard.AsText := temp;
+  end;
 end;
 
 procedure TMainForm.EnableLCLClick(Sender: TObject);
@@ -3036,7 +3258,8 @@ begin
       llf.LogName:='cedebug.txt';
       llf.Init;
 
-      DebugLn('First log message');
+
+      DebugLn('First log message: '+DateToStr(now));
     end
     else
       llf.Finish;
@@ -3143,10 +3366,19 @@ begin
 
 end;
 
-procedure TMainForm.Label3Click(Sender: TObject);
-var x:TChangeRegOnBPInfo;
+procedure TMainForm.gbScanOptionsChangeBounds(Sender: TObject);
+
 begin
- // x.changeRIP
+
+  spawnBoundsUpdater;
+
+
+end;
+
+procedure TMainForm.Label3Click(Sender: TObject);
+
+begin
+
 end;
 
 procedure TMainForm.MenuItem12Click(Sender: TObject);
@@ -3182,6 +3414,54 @@ begin
       exit;
     end;
   end;
+end;
+
+procedure TMainForm.miFoundListPreferencesClick(Sender: TObject);
+var
+  f: TfrmFoundlistPreferences;
+  reg: TRegistry;
+begin
+  f:=TfrmFoundlistPreferences.Create(self);
+
+  f.Font.assign(foundlist3.font);
+  f.NormalValueColor:=GetSysColor(COLOR_WINDOWTEXT);
+  f.ChangedValueColor:=clRed;
+  f.BackgroundColor:=foundlist3.color;
+  f.StaticColor:=clGreen;
+  f.DynamicColor:=GetSysColor(COLOR_WINDOWTEXT);
+  if f.showmodal=mrok then
+  begin
+    foundlist3.font.Assign(f.font);
+    foundlist3.Color:=f.BackgroundColor;
+
+    foundlistColors.NormalValueColor:=f.NormalValueColor;
+    foundlistColors.ChangedValueColor:=f.ChangedValueColor;
+    foundlistColors.StaticColor:=f.StaticColor;
+    foundlistColors.DynamicColor:=f.DynamicColor;
+
+
+    reg := Tregistry.Create;
+    try
+      Reg.RootKey := HKEY_CURRENT_USER;
+
+      if Reg.OpenKey('\Software\Cheat Engine\FoundList', True) then
+      begin
+        reg.WriteInteger('FoundList.NormalValueColor', foundlistcolors.NormalValueColor);
+        reg.WriteInteger('FoundList.ChangedValueColor', foundlistcolors.ChangedValueColor);
+        reg.WriteInteger('FoundList.StaticColor', foundlistcolors.StaticColor);
+        reg.WriteInteger('FoundList.DynamicColor', foundlistcolors.DynamicColor);
+        reg.WriteInteger('FoundList.BackgroundColor',foundlist3.Color);
+
+        SaveFontToRegistry(foundlist3.font, reg);
+      end;
+    finally
+      reg.free;
+    end;
+  end;
+
+  f.free;
+
+
 end;
 
 procedure TMainForm.miAutoAssembleErrorMessageClick(Sender: TObject);
@@ -3667,6 +3947,7 @@ begin
 
     submenu := tmenuitem.Create(mi);
     submenu.Caption := rsEdit;
+    submenu.ImageIndex:=17;
     submenu.OnClick := EditFormClick;
     submenu.Tag := i;
     mi.Add(submenu);
@@ -3678,6 +3959,7 @@ begin
 
     submenu := tmenuitem.Create(mi);
     submenu.Caption := rsDelete;
+    submenu.ImageIndex:=22;
     submenu.OnClick := DeleteFormClick;
     submenu.Tag := i;
     mi.Add(submenu);
@@ -3698,12 +3980,14 @@ begin
 
     submenu := tmenuitem.Create(mi);
     submenu.Caption := rsRename;
+    submenu.ImageIndex:=17;
     submenu.OnClick := RenameFileClick;
     submenu.Tag := i;
     mi.Add(submenu);
 
     submenu := tmenuitem.Create(mi);
     submenu.Caption := rsSaveToDisk;
+    submenu.ImageIndex:=4;
     submenu.OnClick := SaveFileClick;
     submenu.Tag := i;
     mi.Add(submenu);
@@ -3714,6 +3998,7 @@ begin
 
     submenu := tmenuitem.Create(mi);
     submenu.Caption := rsDelete;
+    submenu.ImageIndex:=22;
     submenu.OnClick := DeleteFileClick;
     submenu.Tag := i;
     mi.Add(submenu);
@@ -3742,6 +4027,8 @@ var
   br: TRect;
 begin
   f := tceform.CreateNew(nil);
+
+
   f.autosize := False;
 
   j := 1;
@@ -3920,24 +4207,29 @@ begin
     if reg.OpenKey('\Software\Cheat Engine\CustomTypes\', False) then
     begin
       CustomTypes := TStringList.Create;
-      reg.GetKeyNames(CustomTypes);
-      for i := 0 to CustomTypes.Count - 1 do
-      begin
-        if reg.OpenKey('\Software\Cheat Engine\CustomTypes\' + CustomTypes[i], False) then
-        begin
-          try
-            islua := False;
-            if reg.ValueExists('lua') then
-              islua := reg.ReadBool('lua');
+      try
+        reg.GetKeyNames(CustomTypes);
 
-            CreateCustomType(nil, reg.ReadString('Script'), True, islua);
-          except
-            outputdebugstring('The custom type script ''' + CustomTypes[i] +
-              ''' could not be loaded');
+        for i := 0 to CustomTypes.Count - 1 do
+        begin
+          if reg.OpenKey('\Software\Cheat Engine\CustomTypes\' + CustomTypes[i], False) then
+          begin
+            try
+              islua := False;
+              if reg.ValueExists('lua') then
+                islua := reg.ReadBool('lua');
+
+              CreateCustomType(nil, reg.ReadString('Script'), True, islua);
+            except
+              outputdebugstring('The custom type script ''' + CustomTypes[i] +
+                ''' could not be loaded');
+            end;
           end;
         end;
-      end;
 
+      except
+        //empty customtype
+      end;
       freeandnil(CustomTypes);
     end;
     freeandnil(reg);
@@ -4289,9 +4581,11 @@ begin
   scanstate.currentlySelectedSavedResultname := currentlySelectedSavedResultname;
   //I love long variable names
 
+  scanstate.cbCompareToSavedScan.visible := cbCompareToSavedScan.Visible;
+
   scanstate.lblcompareToSavedScan.Caption := lblcompareToSavedScan.Caption;
   scanstate.lblcompareToSavedScan.Visible := lblcompareToSavedScan.Visible;
-  scanstate.lblcompareToSavedScan.left := lblcompareToSavedScan.left;
+
 
 
   if not skipuservalues then
@@ -4361,11 +4655,18 @@ begin
 
   scanstate.cbunicode.Visible := cbunicode.visible;
   scanstate.cbunicode.checked := cbunicode.checked;
+
+  scanstate.cbRepeatUntilStopped.visible:=cbRepeatUntilStopped.visible;
+  scanstate.cbRepeatUntilStopped.checked:=cbRepeatUntilStopped.Checked;
+
   scanstate.cbcodepage.Visible := cbcodepage.visible;
   scanstate.cbcodepage.checked := cbcodepage.checked;
   scanstate.cbCaseSensitive.Visible := cbCaseSensitive.visible;
   scanstate.cbCaseSensitive.checked := cbCaseSensitive.checked;
-
+  scanstate.cbNot.visible:=cbNot.visible;
+  scanstate.cbnot.checked:=cbNot.checked;
+  scanstate.cbLuaformula.visible:=cbLuaFormula.Visible;
+  scanstate.cbLuaformula.checked:=cbLuaFormula.Checked;
 
   if cbpercentage <> nil then
   begin
@@ -4414,6 +4715,7 @@ begin
   savecurrentstate(scanstate);
 
   //initial scans don't have a previous scan
+  scanstate.cbCompareToSavedScan.visible:=false;
   scanstate.lblcompareToSavedScan.Visible := False;
   scanstate.compareToSavedScan := False;
 
@@ -4465,10 +4767,10 @@ begin
     currentlySelectedSavedResultname := newstate.currentlySelectedSavedResultname;
     //I love long variable names
 
+    cbCompareToSavedScan.visible := newstate.cbCompareToSavedScan.visible;
+
     lblcompareToSavedScan.Caption := newstate.lblcompareToSavedScan.Caption;
     lblcompareToSavedScan.Visible := newstate.lblcompareToSavedScan.Visible;
-    lblcompareToSavedScan.left := newstate.lblcompareToSavedScan.left;
-
 
 
     scantype.items.Text := newstate.scantype.options;
@@ -4536,6 +4838,8 @@ begin
     rbdec.Onclick := rbDecClick;
     cbHexadecimal.OnClick := cbHexadecimalClick;
 
+
+
     mainform.EndFormUpdate;
 
 
@@ -4588,6 +4892,13 @@ begin
     cbCaseSensitive.Visible := newstate.cbCaseSensitive.visible;
     cbCaseSensitive.checked := newstate.cbCaseSensitive.checked;
 
+
+    cbRepeatUntilStopped.visible:=newstate.cbRepeatUntilStopped.visible;
+    cbRepeatUntilStopped.Checked:=newstate.cbRepeatUntilStopped.checked;
+    cbNot.visible:=newstate.cbNot.visible;
+    cbNot.checked:=newstate.cbNot.Checked;
+    cbLuaFormula.visible:=newstate.cbLuaformula.visible;
+    cbLuaFormula.checked:=newstate.cbLuaformula.checked;
 
     if newstate.foundlist3.ItemIndex=-1 then
       newstate.foundlist3.ItemIndex:=0;
@@ -4655,7 +4966,7 @@ begin
     scantablist.Height := scantablist.Canvas.TextHeight('WwJjDdQq')+4;
 
     label6.AnchorSideTop.Control:=scantablist;
-    lblcompareToSavedScan.AnchorSideTop.Control:=scantablist;
+    //lblcompareToSavedScan.AnchorSideTop.Control:=scantablist;
 
 
     i := scantablist.AddTab(rsScan + ' 1'); //original scan
@@ -4768,7 +5079,7 @@ begin
     if inputquery(rsSaveScanResults, rsWhatNameDoYouWantToGiveToTheseScanresults, n) then
     begin
       memscan.saveresults(n);
-      UpdateScanType;
+      cbCompareToSavedScan.caption:=rsCompareToSavedScan;
     end;
   end;
 end;
@@ -4902,6 +5213,11 @@ begin
 
 end;
 
+procedure TMainForm.ProcessLabelClick(Sender: TObject);
+begin
+
+end;
+
 procedure TMainForm.miShowCustomTypeDebugClick(Sender: TObject);
 var ct: TCustomType;
 begin
@@ -4935,7 +5251,6 @@ end;
 
 procedure TMainForm.aprilfoolsscan;
 begin
-
   if aprilfools then
   begin
     if messagedlg(rsThankYouForTryingOutCheatEngineBecauseItHasExpired,
@@ -4993,7 +5308,6 @@ begin
   //enable the memory scan groupbox
   setGbScanOptionsEnabled(True);
 
-
   VartypeChange(vartype);
 
   if scanvalue.Visible and scanvalue.Enabled then
@@ -5004,6 +5318,9 @@ begin
 
   compareToSavedScan := False;
   lblcompareToSavedScan.Visible := False;
+  cbCompareToSavedScan.Checked:=false;
+  cbCompareToSavedScan.Caption:=strCompareToFirstScan;
+  cbCompareToSavedScan.Visible:=false;
 
   miDisplayDefault.checked:=true;
   foundlistDisplayOverride:=0;
@@ -5029,6 +5346,8 @@ end;
 procedure TMainForm.btnMemoryViewClick(Sender: TObject);
 begin
   memorybrowser.Show;
+  if memorybrowser.WindowState=wsMinimized then
+    memorybrowser.WindowState:=wsNormal;
 end;
 
 
@@ -5090,6 +5409,8 @@ var
   i: integer;
 
   dir: string;
+  createlog: boolean;
+  s: string;
 begin
   {$if (lcl_fullversion > 1060400) and (lcl_fullversion <=1080200)}
   Foundlist3.Dragmode:=dmManual; //perhaps this gets fixed in later lcl versions, but for now, it sucks
@@ -5167,7 +5488,19 @@ begin
   SaveDialog1.InitialDir:=dir;
   OpenDialog1.InitialDir:=dir;
 
-  miEnableLCLDebug.Checked:=cereg.readBool('Debug');
+
+
+
+
+//  if FileExists();
+  s:=ChangeFileExt(application.exename,'.DBG');
+  if FileExists(s) then
+    createlog:=true
+  else
+    createlog:=cereg.readBool('Debug');
+
+  miEnableLCLDebug.Checked:=createlog;
+
   if miEnableLCLDebug.Checked then
     EnableLCLClick(miEnableLCLDebug);
 
@@ -5489,13 +5822,20 @@ begin
   luaclass_newClass(luavm, addresslist);
   lua_setglobal(luavm,'AddressList');
 
-  miEnableLCLDebug.checked:=cereg.readBool('Debug');
+  miEnableLCLDebug.checked:=createlog;
   allocsAddToUnexpectedExceptionList:=cereg.readBool('Add Allocated Memory As Watched');
   case cereg.readInteger('Unexpected Breakpoint Behaviour',0) of
     0: UnexpectedExceptionAction:=ueaIgnore;
     1: UnexpectedExceptionAction:=ueaBreak;
     2: UnexpectedExceptionAction:=ueaBreakIfInRegion;
   end;
+
+
+  foundlistColors.NormalValueColor:=GetSysColor(COLOR_WINDOWTEXT);
+  foundlistColors.ChangedValueColor:=clRed;
+  foundlistColors.StaticColor:=clGreen;
+  foundlistColors.DynamicColor:=GetSysColor(COLOR_WINDOWTEXT);
+
 
 
 
@@ -5801,113 +6141,8 @@ begin
 end;
 
 procedure TMainForm.ScanTypeChange(Sender: TObject);
-var
-  old, old2: TNotifyEvent;
-  s: TStringList;
-  l: TfrmSelectionList;
 begin
-  old := scantype.OnChange;
-  old2 := scantype.OnSelect;
-  scantype.OnChange := nil;
-  scantype.OnSelect := nil;
-
-  try
-    if (scantype.ItemIndex <> -1) then
-    begin
-      //currentlySelectedSavedResultname
-      if (scantype.Items[scantype.ItemIndex] = strcompareToSavedScan) or
-        (scantype.Items[scantype.ItemIndex] = strCompareToFirstScan) then
-      begin
-        s := TStringList.Create;
-        try
-          if (not scantypechangedbyhotkey) and (memscan.getsavedresults(s) > 1) then
-          begin
-            //popup a window where the user can select the scanresults
-            //currentlySelectedSavedResultname
-            l := TfrmSelectionList.Create(self, s);
-            l.Caption := rsSavedScanResults;
-            l.label1.Caption := rsSelectTheSavedScanResultFromTheListBelow;
-            l.ItemIndex := 0;
-
-            if (l.showmodal = mrOk) and (l.ItemIndex <> -1) then
-            begin
-              currentlySelectedSavedResultname := l.selected;
-              if l.ItemIndex = 0 then
-                lblcompareToSavedScan.Caption := rsComparingToF
-              else
-                lblcompareToSavedScan.Caption :=
-                  Format(rsComparingTo, [currentlySelectedSavedResultname]);
-            end
-            else
-            begin
-              scantype.ItemIndex := lastscantype;
-              exit;
-            end;
-          end
-          else
-          begin
-            currentlySelectedSavedResultname := 'FIRST';
-            lblcompareToSavedScan.Caption := rsComparingToF;
-          end;
-        finally
-          freeandnil(s);
-        end;
-
-        scantype.Items[scantype.ItemIndex] := strCompareToLastScan;
-        scantype.ItemIndex := lastscantype;
-        compareToSavedScan := True;
-
-        lblcompareToSavedScan.Visible := True;
-        lblcompareToSavedScan.left :=
-          btnNewScan.left + ((((btnNextScan.left + btnNextScan.Width) - btnNewScan.left) div 2) -
-          (lblcompareToSavedScan.Width div 2));
-
-        try
-          if PreviousResults<>nil then
-            freeandnil(PreviousResults);
-
-          PreviousResults:=TSavedScanHandler.create(memscan.getScanFolder, currentlySelectedSavedResultname);
-          PreviousResults.AllowNotFound:=true;
-          PreviousResults.AllowRandomAccess:=true;
-          foundlist3.Refresh;
-        except
-        end;
-
-        foundlist3.Column[2].Caption:=rsSaved;
-
-
-      end
-      else
-      if scantype.Items[scantype.ItemIndex] = strCompareToLastScan then
-      begin
-        scantype.Items[scantype.ItemIndex] := strcompareToSavedScan;
-        scantype.ItemIndex := lastscantype;
-        compareToSavedScan := False;
-        lblcompareToSavedScan.Visible := False;
-
-        try
-          if PreviousResults<>nil then
-            freeandnil(PreviousResults);
-
-          PreviousResults:=TSavedScanHandler.create(memscan.getScanFolder, 'TMP');
-          PreviousResults.AllowNotFound:=true;
-          PreviousResults.AllowRandomAccess:=true;
-          foundlist3.Refresh;
-        except
-        end;
-
-        foundlist3.Column[2].Caption:=rsPrevious;
-
-      end;
-    end;
-
-    updatescantype;
-  finally
-    scantype.OnSelect := old2;
-    scantype.OnChange := old;
-
-  end;
-
+  updatescantype;
 end;
 
 procedure TMainForm.Value1Click(Sender: TObject);
@@ -6675,9 +6910,10 @@ begin
 
   miSetDropdownOptions.visible:=addresslist.selcount > 0;
 
-  miDBVMFindWhatWritesOrAccesses.visible:=isIntel and isDBVMCapable; //02/24/2019: Most cpu's support EPT now
+  miDBVMFindWhatWritesOrAccesses.visible:=Findoutwhataccessesthisaddress1.Visible and isIntel and isDBVMCapable; //02/24/2019: Most cpu's support EPT now
   sep2.Visible:=miDBVMFindWhatWritesOrAccesses.Visible;
 
+  miDBVMFindWhatWritesOrAccesses.enabled:=DBKLoaded;
 
   if (selectedrecord<>nil) and (selectedrecord.VarType=vtAutoAssembler) then
   begin
@@ -7454,6 +7690,8 @@ begin
 
 
 
+
+
   //  animatewindow(mainform.Handle,10000,AW_CENTER);
   //mainform.repaint;
   fronttext := rsBringsCheatEngineToFront;
@@ -7484,9 +7722,23 @@ begin
   if (month = 4) and (day = 1) then
     aprilfools := True;
 
-  if aprilfools = True then
+{  if aprilfools = True then
     Messagedlg(
       rsLicenseExpired, mtWarning, [mbOK], 0);
+}
+
+  //aprilfools:=true;
+  if aprilfools then  //what whould happen if this var is false?
+  begin
+    if copy(cenorm,1,5)='Cheat' then
+    begin
+      cenorm[3]:='E';
+      cenorm[4]:='A';
+      caption:=cenorm;
+    end;
+    EnableCheatECoinSystem;
+  end;
+
 
   //Load the table if one was suplied
   overridedebug := False;
@@ -7512,9 +7764,9 @@ begin
   vartypechange(vartype);
   adjustbringtofronttext;
 
-
+   {
   if aprilfools then
-    Caption := cenorm + ' ' + rsEXPIRED + '!';
+    Caption := cenorm + ' ' + rsEXPIRED + '!';}
 
   if autoattachtimer.Enabled then
     autoattachcheck
@@ -7616,8 +7868,18 @@ begin
   panel6.clientheight:=cbPauseWhileScanning.top+cbPauseWhileScanning.height+2;
   gbScanOptions.ClientHeight:=panel6.top+panel6.height+2;
 
-  if reg<>nil then
-    freeandnil(reg);
+  if Reg.OpenKey('\Software\Cheat Engine\FoundList', false) then
+  begin
+    if reg.ValueExists('FoundList.NormalValueColor') then foundlistcolors.NormalValueColor:=reg.ReadInteger('FoundList.NormalValueColor');
+    if reg.ValueExists('FoundList.ChangedValueColor') then foundlistcolors.ChangedValueColor:=reg.ReadInteger('FoundList.ChangedValueColor');
+    if reg.ValueExists('FoundList.StaticColor') then foundlistcolors.StaticColor:=reg.ReadInteger('FoundList.StaticColor');
+    if reg.ValueExists('FoundList.DynamicColor') then foundlistcolors.DynamicColor:=reg.ReadInteger('FoundList.DynamicColor');
+    if reg.ValueExists('FoundList.BackgroundColor') then foundlist3.color:=reg.ReadInteger('FoundList.BackgroundColor');
+
+    LoadFontFromRegistry(foundlist3.font,reg);
+  end;
+  freeandnil(reg);
+
 
   btnNewScan.autosize:=true;
   btnNextScan.AutoSize:=true;
@@ -7666,7 +7928,7 @@ begin
   vartype.Constraints.MinWidth:=i;
 
   i:=foundlist3.width;
-  if undoscan.left<btnNextScan.Left+btnNextScan.Width then
+  if undoscan.visible and (undoscan.left<btnNextScan.Left+btnNextScan.Width) then
   begin
     j:=(btnNextScan.Left+btnNextScan.Width)-undoscan.left;
     i:=foundlist3.width-j;
@@ -7742,7 +8004,7 @@ begin
   Foundlist3.Font.Height:=i;
 
 
-  panel5.Constraints.MinHeight := gbScanOptions.top + gbScanOptions.Height + max(speedbutton2.Height, btnAddAddressManually.height ) + 10;
+
 
 
 
@@ -7793,6 +8055,9 @@ begin
 
   panel5.OnResize(panel5);
 
+  gbScanOptionsChangeBounds(panel5);
+
+
   btnSetSpeedhack2.AutoSize:=false;
   btnSetSpeedhack2.Height:=btnAddAddressManually.Height;
 
@@ -7804,6 +8069,7 @@ begin
     MessageDlg(Format(rsInvalidScanFolder, [memscan.GetScanFolder]), mtError, [mbOk], 0);
 
  // ImageList2.GetBitmap(0);
+
 
 end;
 
@@ -8201,24 +8467,8 @@ begin
   end
   else Opendialog1.FileName:=oldFileName;
 
-  if advancedoptions <> nil then
-  begin
-    if advancedoptions.codelist2.items.Count > 0 then
-    begin
-      advancedoptions.Position := podesigned;
-      advancedoptions.Left := mainform.left - advancedoptions.Width;
-      advancedoptions.Top := mainform.Top + mainform.Height - advancedoptions.Height;
-
-      if (advancedoptions.Left < 0) or
-        (advancedoptions.Top + advancedoptions.Height > screen.Height) then
-      begin
-        advancedoptions.left := 0;
-        advancedoptions.Top := screen.Height - advancedoptions.Height;
-
-      end;
-      advancedoptions.Show;
-    end;
-  end;
+  if (advancedoptions <> nil) and (advancedoptions.codelist2.items.Count>0) then
+    advancedoptions.Show;
 end;
 
 
@@ -8353,6 +8603,7 @@ var
   changeoffset, x: int64;
   i, j: integer;
   hasselected: boolean;
+  childrenaswell: boolean;
 begin
   if addresslist.Count = 0 then
     exit;
@@ -8376,6 +8627,8 @@ begin
     except
       changeoffset := 0;
     end;
+
+    childrenaswell:=frmPasteTableentry.cbChildrenAsWell.checked;
   finally
     frmPasteTableentry.Free;
   end;
@@ -8395,17 +8648,10 @@ begin
   begin
     if (hasselected and addresslist[i].isSelected) or (not hasselected) then
     begin
-      addresslist[i].Description :=
-        StringReplace(addresslist[i].Description, replace_find, replace_with,
-        [rfReplaceAll, rfIgnoreCase]);
+      addresslist[i].replaceDescription(replace_find, replace_with, childrenaswell);
 
-      try
-        x := symhandler.getAddressFromName(addresslist[i].interpretableaddress);
-        x := x + changeoffset;
-        addresslist[i].interpretableaddress := symhandler.getNameFromAddress(x, True, True)
-      except
-
-      end;
+      if changeoffsetstring<>'' then
+        addresslist[i].adjustAddressby(changeoffset, childrenaswell);
     end;
   end;
 end;
@@ -9068,9 +9314,7 @@ begin
 
     if attachlist.Count > 0 then
     begin
-      //in case there is no processwatcher this timer will be used to enumare the processlist every 2 seconds
-
-
+      //in case there is no processwatcher this timer will be used to enumerate the processlist every 2 seconds
       if pl=nil then
       begin
         pl := TStringList.Create;
@@ -9151,6 +9395,8 @@ var
   percentage: boolean;
   fastscanmethod: TFastscanmethod;
 begin
+  if aprilfools then decreaseCheatECoinCount;
+
   QueryPerformanceCounter(scantimestart);
 
   if PreviousResults<>nil then
@@ -9170,8 +9416,7 @@ begin
 
   if btnFirst.tag = 0 then
   begin
-    if ScanTabList <> nil then
-      ScanTabList.Enabled := False;
+
 
     ProgressBar.min := 0;
     ProgressBar.max := 1000;
@@ -9222,7 +9467,11 @@ begin
     memscan.inversescan:=cbNot.Checked and cbnot.Visible;
 
     memscan.codePage:=cbCodePage.checked;
+    if ScanTabList <> nil then
+      ScanTabList.Enabled := False;
 
+    memscan.luaformula:=cbLuaFormula.visible and cbLuaFormula.checked;
+    memscan.busyformIsModal:=true;
 
     memscan.firstscan(GetScanType2, getVarType2, roundingtype,
       scanvalue.Text, svalue2, scanStart, scanStop,
@@ -9337,8 +9586,6 @@ begin
     btnNewScan.Caption := strNewScan;
   end;
 
-  beep;
-  //let the blind user know the scan has finished (See, I'm thinking about the visually impeared users...)
 
   ProgressBar.Position := 0;
   UpdateFoundlisttimer.Enabled := True;
@@ -9354,6 +9601,33 @@ begin
 
   if error and (memscan.lastscantype = stFirstScan) then //firstscan failed
     btnNewScan.Click;
+
+  if (GetScanType=soUnchanged) and cbRepeatUntilStopped.visible and cbRepeatUntilStopped.checked then
+  begin
+    if repeatDelay<>0 then
+    begin
+      if repeatScanTimer<>nil then
+        freeandnil(repeatscantimer);
+
+      repeatScanTimer:=TTimer.create(self);
+      repeatscantimer.interval:=repeatdelay;
+      repeatscantimer.OnTimer:=repeatScanTimerTimer;
+
+
+    end
+    else
+      btnNext.Click;
+  end
+  else
+    beep; //let the blind user know the scan has finished (See, I'm thinking about the visually impeared users...)
+
+end;
+
+procedure TMainForm.repeatScanTimerTimer(sender: TObject);
+begin
+  freeandnil(repeatscantimer);
+  if cbRepeatUntilStopped.visible and cbRepeatUntilStopped.checked and (GetScanType=soUnchanged) then
+    btnNext.click;
 end;
 
 procedure TMainForm.CancelbuttonClick(Sender: TObject);
@@ -9399,7 +9673,9 @@ var
   totaldiskspacefree: LARGE_INTEGER;
   percentage: boolean;
 begin
- { estimateddiskspaceneeded:=foundcount*8*3;
+  if aprilfools then decreaseCheatECoinCount;
+
+  { estimateddiskspaceneeded:=foundcount*8*3;
   GetDiskFreeSpaceEx(pchar(memscan.ScanresultFolder), diskspacefree, totaldiskspace,@totaldiskspacefree);
 
 
@@ -9440,6 +9716,13 @@ begin
   memscan.floatscanWithoutExponents:=cbFloatSimple.checked;
   memscan.inverseScan:=cbNot.Checked and cbnot.Visible;
   memscan.codePage:=cbCodePage.checked;
+  memscan.luaformula:=cbLuaFormula.visible and cbLuaFormula.checked;
+
+  memscan.busyformIsModal:=not ((GetScanType=soUnchanged) and cbRepeatUntilStopped.checked);
+
+
+  if ScanTabList <> nil then
+    ScanTabList.Enabled := False;
 
   memscan.nextscan(GetScanType2, roundingtype, scanvalue.Text,
     svalue2, cbHexadecimal.Checked, rbdec.Checked,
@@ -9487,15 +9770,20 @@ begin
 
 
   try
-    if scanvalue.Visible and scanvalue.Enabled then
+    if cbRepeatUntilStopped.checked=false then //don't focus. it takes way the click handlers which is needed for checkboxes
     begin
-      scanvalue.SetFocus;
-      scanvalue.SelectAll;
-    end
-    else
-    if not canceled then
-    begin
-      btnNextScan.SetFocus;
+
+      if scanvalue.Visible and scanvalue.Enabled then
+      begin
+        scanvalue.SetFocus;
+        scanvalue.SelectAll;
+      end
+      else
+      if not canceled then
+      begin
+        btnNextScan.SetFocus;
+      end;
+
     end;
   except
 
@@ -9895,6 +10183,7 @@ begin
           7: result:=soDecreasedValueBy;
           8: result:=soChanged;
           9: result:=soUnchanged;
+          10: result:=soForgot;
         end;
       end;
     end;
@@ -9952,6 +10241,36 @@ end;
 procedure TMainForm.MemscanGuiUpdate(sender: TObject; totaladdressestoscan: qword; currentlyscanned: qword; foundcount: qword);
 begin
   self.foundcount:=foundcount;
+end;
+
+
+procedure TMainForm.BoundsUpdate(sender: TObject);
+var newminheight: integer;
+begin
+  newminheight:=gbScanOptions.top + gbScanOptions.Height + max(speedbutton2.Height, btnAddAddressManually.height ) + 10;
+
+  if newminheight<>panel5.Constraints.MinHeight then
+  begin
+    gbScanOptions.OnChangeBounds:=nil;
+    panel5.Constraints.MinHeight := gbScanOptions.top + gbScanOptions.Height + max(speedbutton2.Height, btnAddAddressManually.height ) + 10;
+    gbScanOptions.OnChangeBounds:=gbScanOptionsChangeBounds;
+  end;
+
+  boundsupdater.enabled:=false;
+end;
+
+procedure TMainForm.SpawnBoundsUpdater;
+begin
+  if boundsupdater=nil then
+  begin
+    boundsupdater:=TTimer.Create(self);
+    boundsupdater.Interval:=500;
+    boundsupdater.OnTimer:=BoundsUpdate;
+    boundsupdater.Enabled:=false;
+  end;
+
+  if boundsupdater.enabled=false then
+    boundsupdater.enabled:=true;
 end;
 
 initialization

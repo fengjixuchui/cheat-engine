@@ -26,6 +26,7 @@
 #define EPTO_SAVE_STACK     (1<<3) //logs contain a 4kb stack snapshot
 #define EPTO_PMI_WHENFULL   (1<<4) //triggers a PMI when full
 #define EPTO_GROW_WHENFULL  (1<<5) //grows the buffer when full
+#define EPTO_INTERRUPT      (1<<6) //raise interrupt on match instead of log
 
 #define EPTW_WRITE 0
 #define EPTW_READWRITE 1
@@ -37,7 +38,7 @@ void initMemTypeRanges();
 VMSTATUS handleEPTViolation(pcpuinfo currentcpuinfo, VMRegisters *vmregisters, PFXSAVE64 fxsave);
 VMSTATUS handleEPTMisconfig(pcpuinfo currentcpuinfo, VMRegisters *vmregisters);
 int ept_handleWatchEventAfterStep(pcpuinfo currentcpuinfo, int ID);
-int ept_handleCloakEventAfterStep(pcpuinfo currentcpuinfo, int ID);
+int ept_handleCloakEventAfterStep(pcpuinfo currentcpuinfo, PCloakedPageData cloakdata);
 int ept_handleSoftwareBreakpointAfterStep(pcpuinfo currentcpuinfo,  int ID);
 
 int ept_watch_activate(QWORD PhysicalAddress, int Size, int Type, DWORD Options, int MaxEntryCount, int *outID);
@@ -57,5 +58,6 @@ BOOL ept_handleSoftwareBreakpoint(pcpuinfo currentcpuinfo, VMRegisters *vmregist
 
 void ept_reset();
 void ept_invalidate();
+void vpid_invalidate();
 
 #endif /* VMM_EPTHANDLER_H_ */

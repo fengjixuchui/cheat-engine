@@ -55,6 +55,17 @@ type
     cachedBlock: TBitmap; //Cache the block image and only update when changes happen
     ftexture: glint;
 
+
+    fBlockId: integer;
+    fShowHeader: boolean;
+    fDragbody: boolean;
+    fOnDrag: TNotifyEvent;
+    fOnDragStart: TNotifyEvent;
+    fOnDragEnd: TNotifyEvent;
+
+
+    fTag: qword;
+
     function getBackgroundColor: TColor;
     procedure setBackgroundColor(c: TColor);
     function getTextColor: TColor;
@@ -72,7 +83,11 @@ type
     procedure sety(newy: integer);
     function getRect: trect;
     procedure setRect(r: trect);
+
+    procedure createBlock(graphConfig: TDiagramConfig);
   public
+
+
 
     function getData: TStrings;
     procedure setData(s: TStrings);
@@ -91,11 +106,15 @@ type
     procedure DoAutoSize;
 
     function IntersectsWithLine(startpoint, endpoint: tpoint; out intersectpoint: tpoint): boolean;
+    procedure saveToStream(f: TStream);
+    procedure loadFromStream(f: TStream);
 
     procedure render;
     property OnDestroy: TNotifyEvent read fOnDestroy write fOnDestroy;
     property BlockRect: TRect read getRect write setRect;
+    property BlockID: integer read fBlockId write fBlockId; //used for saving/loading. set by diagram
     constructor create(graphConfig: TDiagramConfig);
+    constructor createFromStream(graphConfig: TDiagramConfig; f: TStream);
     destructor destroy; override;
   published
     property Owner: TCustomControl read getOwner;
@@ -112,10 +131,17 @@ type
     property AutoSize: boolean read fAutoSize write setAutoSize;
     property AutoSide: boolean read fAutoSide write fAutoSide;
     property AutoSideDistance: integer read fAutoSideDistance write fAutoSideDistance;
+    property ShowHeader: boolean read fShowHeader write fShowHeader default true;
+    property DragBody: boolean read fDragbody write fDragBody;
+
     property OnDoubleClickHeader: TNotifyEvent read fOnDoubleClickHeader write fOnDoubleClickHeader;
     property OnDoubleClickBody: TNotifyEvent read fOnDoubleClickBody write fOnDoubleClickBody;
     property OnRenderHeader: TDBCustomDrawEvent read fOnRenderHeader write fOnRenderHeader;
     property OnRenderBody: TDBCustomDrawEvent read fOnRenderBody write fOnRenderBody;
+    property OnDrag: TNotifyEvent read fOnDrag write fOnDrag;
+    property OnDragStart: TNotifyEvent read fOnDragStart write fOnDragStart;
+    property OnDragEnd: TNotifyEvent read fOnDragEnd write fOnDragEnd;
+    property Tag: Qword read fTag write fTag;
   end;
 
 implementation
@@ -181,6 +207,7 @@ begin
   startpointf.x:=startpoint.x;
   startpointf.y:=startpoint.y;
 
+  best.distance:=0;
   result:=false;
 
   if LinesCross(startpoint,endpoint,point(r.left,r.top),point(r.right,r.top)) then //top
@@ -269,6 +296,8 @@ procedure TDiagramBlock.setBackgroundColor(c: TColor);
 begin
   customBackgroundColor:=c;
   useCustomBackgroundColor:=true;
+
+  hasChanged:=true;
 end;
 
 function TDiagramBlock.getTextColor: TColor;
@@ -346,6 +375,55 @@ begin
 
 end;
 
+procedure TDiagramBlock.saveToStream(f: TStream);
+begin
+  f.WriteAnsiString('BLK');
+  f.WriteAnsiString(fname);
+  f.WriteAnsiString(fcaption);
+  f.WriteAnsiString(data.Text);
+
+  f.WriteQWord(tag);
+  f.WriteDWord(fBlockID);
+  f.WriteDWord(fx);
+  f.WriteDWord(fy);
+  f.WriteDWord(fwidth);
+  f.WriteDWord(fheight);
+  f.WriteByte(ifthen(useCustomBackgroundColor, 1,0));
+  if useCustomBackgroundColor then f.WriteDWord(customBackgroundColor);
+  f.WriteByte(ifthen(useCustomTextColor, 1,0));
+  if useCustomTextColor then f.WriteDWord(CustomTextColor);
+
+  f.WriteByte(ifthen(ShowHeader, 1,0));
+  f.WriteByte(ifthen(DragBody, 1,0));
+  f.WriteByte(ifthen(AutoSize, 1,0));
+  f.WriteByte(ifthen(AutoSide, 1,0));
+  f.WriteWord(fAutoSideDistance);
+end;
+
+procedure TDiagramBlock.loadFromStream(f: TStream);
+begin
+  if f.ReadAnsiString<>'BLK' then raise exception.create('Block read error');
+  fname:=f.ReadAnsiString;
+  fcaption:=f.ReadAnsiString;
+  data.text:=f.ReadAnsiString;
+  tag:=f.ReadQWord;
+  fBlockId:=f.ReadDWord;
+  fx:=f.ReadDWord;
+  fy:=f.ReadDWord;
+  fwidth:=f.ReadDWord;
+  fheight:=f.ReadDWord;
+  useCustomBackgroundColor:=f.readbyte=1;
+  if useCustomBackgroundColor then customBackgroundColor:=f.ReadDWord;
+  useCustomTextColor:=f.readByte=1;
+  if useCustomTextColor then CustomTextColor:=f.ReadDWord;
+
+  ShowHeader:=f.readbyte=1;
+  DragBody:=f.readbyte=1;
+  AutoSize:=f.readbyte=1;
+  autoside:=f.readbyte=1;
+  fAutoSideDistance:=f.readWord;
+end;
+
 procedure TDiagramBlock.render;
 var
   c: TCanvas;
@@ -359,6 +437,17 @@ var
 begin
   //render the block at the given location
   //if config.canvas=nil then exit;
+  cr.Left:=0;
+  cr.Top:=0;
+  cr.Width:=0;
+  cr.height:=0;
+  tr.left:=0;
+  tr.top:=0;
+  tr.width:=0;
+  tr.height:=0;
+
+
+
 
   if hasChanged or (config.UseOpenGL and (ftexture=0)) then
   begin
@@ -386,23 +475,34 @@ begin
     c.Rectangle(0,0,width,height);
 
 
-    if captionheight=0 then
-      captionheight:=c.GetTextHeight('XxYyJjQq')+4;
+    if fShowHeader then
+    begin
+      if (captionheight=0) then
+        captionheight:=c.GetTextHeight('XxYyJjQq')+4;
 
-    c.Rectangle(0,0,width,captionheight);
+      c.Rectangle(0,0,width,captionheight);
+    end
+    else
+      captionheight:=0;
+
+
 
     oldfontcolor:=c.font.color;
     c.font.color:=TextColor;
 
-    renderOriginal:=true;
-    if assigned(fOnRenderHeader) then
-      fOnRenderHeader(self,rect(0,0,width-1,captionheight),true, renderOriginal);
 
-    if renderOriginal then
+    if fShowHeader then
     begin
-      cr:=renderFormattedText(c, rect(0,0,width-1,captionheight),1,0,caption);
+      renderOriginal:=true;
       if assigned(fOnRenderHeader) then
-        fOnRenderHeader(self,rect(0,0,width-1,captionheight),false, renderOriginal);
+        fOnRenderHeader(self,rect(0,0,width-1,captionheight),true, renderOriginal);
+
+      if renderOriginal then
+      begin
+        cr:=renderFormattedText(c, rect(0,0,width-1,captionheight),1,0,caption);
+        if assigned(fOnRenderHeader) then
+          fOnRenderHeader(self,rect(0,0,width-1,captionheight),false, renderOriginal);
+      end;
     end;
 
 
@@ -416,6 +516,7 @@ begin
       if assigned(fOnRenderBody) then
         fOnRenderBody(self,rect(0,0,width-1,captionheight),false, renderOriginal);
     end;
+
 
 
     preferedwidth:=cr.Width;
@@ -781,6 +882,9 @@ function TDiagramBlock.getConnectPosition(side: TDiagramBlockSide; position: int
 var
   hc,vc: integer;
 begin
+  result.x:=0;
+  result.y:=0;
+
   case side of
     dbsTopLeft: exit(point(x,y));
     dbsTop:
@@ -897,8 +1001,9 @@ begin
 
 end;
 
-constructor TDiagramBlock.create(graphConfig: TDiagramConfig);
+procedure TDiagramBlock.createBlock(graphConfig: TDiagramConfig);
 begin
+  fShowHeader:=true;
   data:=TStringList.create;
   data.OnChange:=@DataChange;
 
@@ -907,7 +1012,17 @@ begin
   y:=0;
   width:=100;
   height:=100;
+end;
 
+constructor TDiagramBlock.create(graphConfig: TDiagramConfig);
+begin
+  createBlock(graphConfig);
+end;
+
+constructor TDiagramBlock.createFromStream(graphConfig: TDiagramConfig; f: TStream);
+begin
+  createBlock(graphConfig);
+  loadFromStream(f);
 end;
 
 destructor TDiagramBlock.destroy;
@@ -917,7 +1032,8 @@ begin
 
   //owner.NotifyBlockDestroy(self);
 
-  data.free;
+  if data<>nil then
+    freeandnil(data);
 
   if cachedblock<>nil then
     freeandnil(cachedblock);

@@ -76,9 +76,12 @@ type
     cbNeverChangeProtection: TCheckBox;
     cbAlwaysForceLoad: TCheckBox;
     cbAllocsAddToWatchedRegions: TCheckBox;
+    cbSkip_PAGE_WRITECOMBINE: TCheckBox;
+    cbUseThreadForFreeze: TCheckBox;
     combothreadpriority: TComboBox;
     defaultbuffer: TPopupMenu;
     Default1: TMenuItem;
+    edtRepeatDelay: TEdit;
     edtLuaCollectTimer: TEdit;
     edtLuaMinCollectSize: TEdit;
     EditAutoAttach: TEdit;
@@ -105,6 +108,8 @@ type
     Label16: TLabel;
     Label17: TLabel;
     Label20: TLabel;
+    Label25: TLabel;
+    lblRepeatDelay: TLabel;
     lblCurrentLanguage: TLabel;
     Label18: TLabel;
     Label19: TLabel;
@@ -223,13 +228,14 @@ type
     procedure CheckBox1Change(Sender: TObject);
     procedure EditBufSizeKeyPress(Sender: TObject; var Key: Char);
     procedure Default1Click(Sender: TObject);
+    procedure FormChangeBounds(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure FormShow(Sender: TObject);
     procedure cbShowDisassemblerClick(Sender: TObject);
     procedure Label3Click(Sender: TObject);
     procedure LoadButtonClick(Sender: TObject);
     procedure MenuItem1Click(Sender: TObject);
-    procedure Panel11Click(Sender: TObject);
+    procedure miUnexpectedBreakpointsOptionChange(Sender: TObject);
     procedure Panel3Click(Sender: TObject);
     procedure Panel3Resize(Sender: TObject);
     procedure pcSettingChange(Sender: TObject);
@@ -281,6 +287,8 @@ type
 
     hasSetNewLanguage: boolean;
     newLanguage: string;
+
+    unexpectedExceptionHandlerChanged: boolean;
 
     procedure SetAssociations;
     procedure LanguageMenuItemClick(Sender: TObject);
@@ -430,6 +438,7 @@ var processhandle2: Thandle;
 
     networkupdateinterval,updateinterval,freezeinterval,FoundInterval: integer;
     collectgarbagetimer, collectgarbageminimumsize: integer;
+    repeatDelay: integer;
 
     stacksize: integer;
 
@@ -438,6 +447,7 @@ var processhandle2: Thandle;
     cpu: string;
     WriteLogSize: integer;
     s: string;
+
 begin
   try
     {$ifdef cpu64}
@@ -485,6 +495,10 @@ begin
     try bufsize:=StrToInt(editbufsize.text); except bufsize:=1024; end;
 
     if bufsize=0 then raise exception.create(rsTheScanbufferSizeHasToBeGreaterThan0);
+
+
+    val(edtRepeatDelay.text,repeatDelay,error);
+    if (error<>0) or (repeatDelay<0) then raise exception.Create(Format(rsIsNotAValidInterval, [edtRepeatDelay.text]));
 
 
 
@@ -604,7 +618,12 @@ begin
         reg.WriteBool('Pointer appending', cbOldPointerAddMethod.checked);
 
         reg.writebool('skip PAGE_NOCACHE',cbSkip_PAGE_NOCACHE.Checked);
+        reg.writebool('skip PAGE_WRITECOMBINE',cbSkip_PAGE_WRITECOMBINE.Checked);
         reg.writebool('Pause when scanning on by default',cbPauseWhenScanningOnByDefault.Checked);
+
+
+        reg.WriteInteger('Repeat Delay',repeatDelay);
+        Globals.repeatDelay:=repeatDelay;
 
 
         reg.WriteBool('Hide all windows',cbHideAllWindows.checked);
@@ -797,7 +816,10 @@ begin
         if miUnexpectedBreakpointsBreak.checked then i:=1;
         if miUnexpectedBreakpointsBreakWhenInsideRegion.checked then i:=2;
 
-        if (reg.ValueExists('Unexpected Breakpoint Behaviour')=false) or (reg.ReadInteger('Unexpected Breakpoint Behaviour')<>i) then
+
+        reg.WriteInteger('Unexpected Breakpoint Behaviour', i);
+
+        if unexpectedExceptionHandlerChanged then //apply it
         begin
           case i of
             0: UnexpectedExceptionAction:=ueaIgnore;
@@ -805,7 +827,8 @@ begin
             2: UnexpectedExceptionAction:=ueaBreakIfInRegion;
           end;
         end;
-        reg.WriteInteger('Unexpected Breakpoint Behaviour', i);
+
+
 
         if (reg.ValueExists('Add Allocated Memory As Watched')=false) or (reg.ReadBool('Add Allocated Memory As Watched')<>cbAllocsAddToWatchedRegions.checked) then
           allocsAddToUnexpectedExceptionList:=cbAllocsAddToWatchedRegions.Checked;
@@ -865,19 +888,21 @@ begin
         reg.WriteBool('collectgarbage only when bigger', cbLuaOnlyCollectWhenLarger.checked);
         reg.WriteInteger('collectgarbage minsize', collectgarbageminimumsize);
 
+        reg.WriteBool('use thread to freeze', cbUseThreadForFreeze.checked);
+
+        mainform.FreezeTimer.Interval:=freezeinterval;
+        mainForm.UseThreadToFreeze:=cbUseThreadForFreeze.checked;
+
         if cbOverrideDefaultFont.checked then
         begin
           if reg.OpenKey('\Software\Cheat Engine\Font', true) then
             SaveFontToRegistry(fontdialog1.Font, reg);
         end;
 
+
       end
       else
         messagedlg(rsFailureToOpenRegistry, mtError, [mbok], 0);
-
-
-
-
 
 
       if cbLuaGarbageCollectAll.checked then
@@ -891,7 +916,6 @@ begin
       end;
       mainform.tLuaGCActive.enabled:=cbLuaGarbageCollectAll.checked;
       mainform.tLuaGCPassive.enabled:=cbLuaPassiveGarbageCollection.checked;
-
 
   {$ifndef net}
 
@@ -966,16 +990,15 @@ begin
 
 
     {$ifndef net}
-    mainform.FreezeTimer.Interval:=freezeinterval;
     mainform.UpdateTimer.Interval:=updateinterval;
     {$else}
-    mainform.FreezeTimer.Interval:=freezeinterval;
     mainform.UpdateTimer.Interval:=networkupdateinterval;
     {$endif}
 
     savedStackSize:=stacksize;
 
     Skip_PAGE_NOCACHE:=cbSkip_PAGE_NOCACHE.Checked;
+    Skip_PAGE_WRITECOMBINE:=cbSkip_PAGE_WRITECOMBINE.checked;
 
     {$ifndef net}
     Scan_MEM_PRIVATE:=cbMemPrivate.checked;
@@ -1217,9 +1240,27 @@ begin
   editbufsize.Text:='512';
 end;
 
+procedure TformSettings.FormChangeBounds(Sender: TObject);
+var off: integer;
+begin
+  OnChangeBounds:=nil;
+  if top<0 then
+  begin
+    position:=poDesigned;
+    if height>screen.WorkAreaHeight then
+      height:=screen.WorkAreaHeight;
+
+    top:=0;
+  end;
+  OnChangeBounds:=FormChangeBounds;
+end;
+
+
+
 procedure TformSettings.FormDestroy(Sender: TObject);
 begin
   formSettings:=nil;
+  SaveFormPosition(self);
 end;
 
 procedure TformSettings.FormShow(Sender: TObject);
@@ -1342,6 +1383,9 @@ begin
   end;
 
  // GroupBox2.top:=rbgDebuggerInterface.top+rbgDebuggerInterface.height+4;
+
+  unexpectedExceptionHandlerChanged:=false;
+
 end;
 
 procedure TformSettings.cbShowDisassemblerClick(Sender: TObject);
@@ -1365,10 +1409,12 @@ begin
   ScanForLanguages;
 end;
 
-procedure TformSettings.Panel11Click(Sender: TObject);
+procedure TformSettings.miUnexpectedBreakpointsOptionChange(Sender: TObject);
 begin
-
+  unexpectedExceptionHandlerChanged:=true;
 end;
+
+
 
 procedure TformSettings.Panel3Click(Sender: TObject);
 begin
@@ -1774,6 +1820,9 @@ begin
   cbInjectDLLWithAPC.visible:=true;
   {$endif}
 
+
+  if LoadFormPosition(self) then
+    autosize:=false;
 end;
 
 procedure TformSettings.cbKernelQueryMemoryRegionClick(Sender: TObject);

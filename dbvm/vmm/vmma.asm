@@ -525,7 +525,7 @@ mov [rsp+11*8],rdx
 
 rdtsc
 
-mov dword [fs:0x18],eax
+mov dword [fs:0x18],eax ;lasttsc
 mov dword [fs:0x1c],edx
 
 
@@ -607,16 +607,17 @@ jae vmxloop_exitvm
 ;returned 0, so
 
 ;adjust the TSC
-rdtsc
+rdtsc  ;current time
 shl rdx,32
 or rax,rdx
 
-mov rdx,qword [fs:0x18]
+mov rdx,qword [fs:0x18] ;entry time
 
 ;rax is new timestamp
 ;rdx is old timestamp
 
 sub rax,rdx ;rax is now the difference
+add rax,100
 add qword [fs:0x20],rax ;add to the total delay
 
 
@@ -1480,6 +1481,27 @@ invept rdi,[rsi]
 ret
 
 
+global _invept2
+;---------------------------;
+;_invept2(int type, 128data);  type must be either 1(local for specific ept pointer) or 2(global for all vpids)
+;---------------------------;
+_invept2:
+invept rdi,[rsi]
+jc _invept2_err1
+jz _invept2_err2
+xor rax,rax
+ret
+
+_invept2_err1:
+mov eax,1
+ret
+
+_invept2_err2:
+mov eax,2
+ret
+
+
+
 global _invvpid
 ;--------------------------;
 ;_invvpid(int type, 128data);  type must be either 0(specific linear address for specific vpid) 1(local for specific vpid) or 2(global for all vpids)
@@ -1487,6 +1509,26 @@ global _invvpid
 _invvpid:
 invvpid rdi,[rsi]
 ret
+
+global _invvpid2
+;----------------------------;
+;_invvpid2(int type, 128data);  type must be either 0(specific linear address for specific vpid) 1(local for specific vpid) or 2(global for all vpids)
+;----------------------------;
+_invvpid2:
+invvpid rdi,[rsi]
+jc _vmread2_err1
+jz _vmread2_err2
+xor rax,rax
+ret
+
+_invvpid2_err1:
+mov eax,1
+ret
+
+_invvpid2_err2:
+mov eax,2
+ret
+
 
 
 

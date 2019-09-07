@@ -7,8 +7,10 @@ interface
 uses
   jwawindows, windows, Classes, SysUtils;
 
+type
+  TUnexpectedExceptionAction=(ueaIgnore, ueaBreak, ueaBreakIfInRegion);
 var
-  UnexpectedExceptionAction: (ueaIgnore, ueaBreak, ueaBreakIfInRegion)=ueaIgnore;
+  UnexpectedExceptionAction: TUnexpectedExceptionAction=ueaIgnore;
   function IsInUnexpectedExceptionRegion(Address: ptruint): boolean;
   procedure AddUnexpectedExceptionRegion(Address: ptruint; size: integer);
   function RemoveUnexpectedExceptionRegion(Address: ptruint; size: integer): boolean;
@@ -29,7 +31,7 @@ var
 implementation
 
 uses syncobjs, CEFuncProc, commonTypeDefs, maps, registry,
-  frmExceptionRegionListUnit;
+  frmExceptionRegionListUnit, frmExceptionIgnoreListUnit;
 
 var
   UnexpectedExceptionListCS: TCriticalsection;
@@ -143,6 +145,9 @@ begin
   finally
     IgnoredExceptionCodeListCS.Leave;
   end;
+
+  if (GetCurrentThreadId=MainThreadID) and (frmExceptionIgnoreList<>nil) then
+    frmExceptionIgnoreList.UpdateList;
 end;
 
 function RemoveIgnoredExceptionCode(code: DWORD): boolean;
@@ -158,6 +163,9 @@ begin
   finally
     IgnoredExceptionCodeListCS.Leave;
   end;
+
+  if (GetCurrentThreadId=MainThreadID) and (frmExceptionIgnoreList<>nil) then
+    frmExceptionIgnoreList.UpdateList;
 end;
 
 procedure getIgnoredExceptionCodeList(l:  tstrings);
@@ -192,10 +200,23 @@ begin
   try
     if reg.OpenKey('\Software\Cheat Engine\Ignored Exceptions\',true) then
     begin
-      l:=tstringlist.create;
-      getIgnoredExceptionCodeList(l);
-      for i:=0 to l.count-1 do
-        reg.WriteBool(l[i],true);
+      try
+        l:=tstringlist.create;
+
+        reg.GetValueNames(l);
+
+        for i:=0 to l.count-1 do
+          reg.DeleteValue(l[i]);
+
+        l.clear;
+
+
+        getIgnoredExceptionCodeList(l);
+        for i:=0 to l.count-1 do
+          reg.WriteBool(l[i],true);
+
+      except
+      end;
 
       l.free;
     end;
@@ -215,14 +236,19 @@ begin
     if reg.OpenKey('\Software\Cheat Engine\Ignored Exceptions\',false) then
     begin
       l:=tstringlist.create;
-      reg.GetValueNames(l);
 
-      for i:=0 to l.count-1 do
-      begin
-        try
-          AddIgnoredExceptionCode(strtoint('0x'+l[i]));
-        except
+      try
+        reg.GetValueNames(l);
+
+        for i:=0 to l.count-1 do
+        begin
+          try
+            AddIgnoredExceptionCode(strtoint('0x'+copy(l[i],1,8)));
+          except
+          end;
         end;
+      except
+        OutputDebugString('No exceptioncode ignore list');
       end;
 
     end;

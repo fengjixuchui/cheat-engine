@@ -245,6 +245,7 @@ type
     procedure SetCollapsed(state: boolean);
 
     procedure processingDone; //called by the processingThread when finished
+
   public
 
 
@@ -275,6 +276,8 @@ type
     //free for editing by user:
     function hasSelectedParent: boolean;
     function hasParent: boolean;
+
+    procedure appendToEntry(memrec: TMemoryrecord);
 
 
     function isBeingEdited: boolean;
@@ -328,6 +331,9 @@ type
     function getlinkedDropDownMemrec: TMemoryRecord;
     function getlinkedDropDownMemrec_LoopDetected: boolean;
 
+    procedure replaceDescription(replace_find, replace_with: string; childrenaswell: boolean);
+    procedure adjustAddressby(offset: qword; childrenaswell: boolean);
+
     constructor Create(AOwner: TObject);
     destructor destroy; override;
 
@@ -372,7 +378,7 @@ type
     property DropDownCount: integer read getDropDownCount;
     property DropDownValue[index:integer]: string read getDropDownValue;
     property DropDownDescription[index:integer]: string read getDropDownDescription;
-    property Parent: TMemoryRecord read getParent;
+    property Parent: TMemoryRecord read getParent write appendToEntry;
     property OnActivate: TMemoryRecordActivateEvent read fOnActivate write fOnActivate;
     property OnDeactivate: TMemoryRecordActivateEvent read fOnDeActivate write fOndeactivate;
     property OnDestroy: TNotifyEvent read fOnDestroy write fOnDestroy;
@@ -445,7 +451,7 @@ implementation
 
 {$ifdef windows}
 uses mainunit, addresslist, formsettingsunit, LuaHandler, lua, lauxlib, lualib,
-  processhandlerunit, Parsers, winsapi,autoassembler, globals;
+  processhandlerunit, Parsers, winsapi,autoassembler, globals, cheatecoins;
 {$endif}
 
 {$ifdef unix}
@@ -739,6 +745,9 @@ begin
       s:=StringReplace(s,'{MRDescription}', fowner.Description,[rfIgnoreCase, rfReplaceAll]);
       s:=StringReplace(s,'{Description}', Description, [rfIgnoreCase, rfReplaceAll]);
 
+      s:=StringReplace(s,'{MRValue}', fowner.Value,[rfIgnoreCase, rfReplaceAll]);
+      s:=StringReplace(s,'{Value}', Value, [rfIgnoreCase, rfReplaceAll]);
+
 
 
       if ActivateSoundFlag=hksSpeakTextEnglish then
@@ -764,6 +773,9 @@ begin
       s:=DeactivateSound;
       s:=StringReplace(s,'{MRDescription}', fowner.Description,[rfIgnoreCase, rfReplaceAll]);
       s:=StringReplace(s,'{Description}', Description, [rfIgnoreCase, rfReplaceAll]);
+
+      s:=StringReplace(s,'{MRValue}', fowner.Value,[rfIgnoreCase, rfReplaceAll]);
+      s:=StringReplace(s,'{Value}', Value, [rfIgnoreCase, rfReplaceAll]);
 
       if DeactivateSoundFlag=hksSpeakTextEnglish then
         speak('<voice required="Language=409">'+s+'</voice>')
@@ -953,6 +965,48 @@ begin
   else
   {$ENDIF}
     result:=nil;
+end;
+
+procedure TMemoryRecord.replaceDescription(replace_find, replace_with: string; childrenaswell: boolean);
+var i: integer;
+begin
+  Description:=stringreplace(Description,replace_find,replace_with,[rfReplaceAll,rfIgnoreCase]);
+  if childrenaswell then
+  begin
+    for i:=0 to Count-1 do
+      Child[i].replaceDescription(replace_find, replace_with, childrenaswell);
+  end;
+end;
+
+procedure TMemoryRecord.adjustAddressby(offset: qword; childrenaswell: boolean);
+var
+  s: string;
+  x: ptruint;
+  i: integer;
+begin
+  if interpretableaddress<>'' then //always true
+  begin
+    try
+      s:=trim(interpretableaddress);
+      if s<>'' then
+      begin
+        if not (s[1] in ['-', '+']) then //don't do relative addresses
+        begin
+          x:=symhandler.getAddressFromName(interpretableaddress);
+          x:=x+offset;
+          interpretableaddress:=symhandler.getNameFromAddress(x,true,true)
+        end;
+      end;
+    except
+      interpretableaddress:=inttohex(getBaseAddress+offset,8);
+    end;
+
+    ReinterpretAddress;
+  end;
+
+  if childrenaswell then
+    for i:=0 to count-1 do
+      Child[i].adjustAddressby(offset, childrenaswell);
 end;
 
 function TMemoryRecord.getHotkeyCount: integer;
@@ -1525,6 +1579,14 @@ begin
 
 
 end;
+
+
+procedure TMemoryRecord.appendToEntry(memrec: TMemoryrecord);
+begin
+  treenode.MoveTo(memrec.treenode, naAddChild);
+  memrec.SetVisibleChildrenState;
+end;
+
 
 function TMemoryRecord.getParent: TMemoryRecord;
 {$IFNDEF UNIX}
@@ -2351,6 +2413,8 @@ var f: string;
 
     p: boolean;
 begin
+  if state and aprilfools then decreaseCheatECoinCount;
+
   if state=fActive then exit; //no need to execute this is it's the same state
   if processingThread<>nil then exit; //don't change the state while processing
 

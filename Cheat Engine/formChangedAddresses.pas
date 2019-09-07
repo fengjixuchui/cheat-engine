@@ -139,6 +139,14 @@ resourcestring
   rsInvalidGroups = 'Invalid groups';
   rsDeleteAddresses = 'Delete addresses';
   rsAreYouWishToDelete = 'Are you sure you wish to delete these entries(s)?';
+  rsCodeAccessesSingleAddress = 'This address has been accessed by the code '
+    +'you selected';
+  rsCodeAccessesAddresses = 'The following %d addresses have been accessed by '
+    +'the code you selected';
+  rsValueChange = 'Value Change';
+  rsGiveTheNewValue = 'Give the new value';
+
+
 
 destructor TAddressEntry.destroy;
 begin
@@ -695,11 +703,12 @@ var
   vartype: TVariableType;
   ct: TCustomType;
 begin
+  value:='';
   if changedlist.ItemIndex<>-1 then
-  begin
     value:=changedlist.Items[changedlist.ItemIndex].SubItems[0];
-    if InputQuery('Value Change','Give the new value',value)=false then exit;
-  end;
+
+  if InputQuery(rsValueChange, rsGiveTheNewValue, value)=false then exit;
+
 
   for i:=0 to changedlist.Items.Count-1 do
   begin
@@ -927,7 +936,7 @@ begin
     changedlist.Column[1].Width:=max(changedlist.Column[1].Width, canvas.TextWidth('9999999.999'));
     changedlist.Column[2].Width:=max(changedlist.Column[2].Width, canvas.TextWidth('999999'));
 
-    ClientWidth:=max(clientwidth, changedlist.Column[0].Width+changedlist.Column[1].Width+changedlist.Column[2].Width+20);
+    ClientWidth:=max(clientwidth, integer(changedlist.Column[0].Width+changedlist.Column[1].Width+changedlist.Column[2].Width+20));
     hassetsizes:=true;
   end;
 end;
@@ -976,6 +985,7 @@ var i: integer;
     startindex: integer;
     stopindex: integer;
 begin
+  s:='';
   if changedlist.Items.Count>0 then
   begin
     if Changedlist.TopItem=nil then exit;
@@ -1022,8 +1032,21 @@ begin
 end;
 
 procedure TfrmChangedAddresses.Timer1Timer(Sender: TObject);
+var
+  c: integer;
+  s: string;
+
 begin
   refetchValues;
+  c:=changedlist.Items.Count;
+
+  if c=1 then
+    s:=rsCodeAccessesSingleAddress
+  else
+    s:=format(rsCodeAccessesAddresses, [c]);
+
+  lblInfo.caption:=s;
+
 end;
 
 procedure TfrmChangedAddresses.Showregisterstates1Click(Sender: TObject);

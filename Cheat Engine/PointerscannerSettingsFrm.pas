@@ -364,7 +364,7 @@ begin
   cbAddress.parent:=self;
   cbAddress.AnchorSideRight.Control:=btnDelete;
   cbAddress.AnchorSideRight.side:=asrLeft;
-  cbAddress.Constraints.MinWidth:=TPointerFileList(aowner).canvas.TextWidth('DDDDDDDDDDDD');
+  cbAddress.Constraints.MinWidth:=TPointerFileList(aowner).canvas.TextWidth(' DDDDDDDDDDDDDDDD ');
   //cbAddress.clientwidth:=tcustomform(aowner).canvas.TextWidth('DDDDDDDDDDDD');
   cbAddress.anchors:=[aktop, akright];
   cbAddress.BorderSpacing.Right:=8;
@@ -484,7 +484,7 @@ begin
   lblfilename.ShowHint:=true;
 
   if fileexists(filename+'.addresslist') then
-    tstrings(cbAddress.tag).LoadFromFile(filename+'.addresslist');
+    tstrings(cbAddress.tag).LoadFromFile(filename+'.addresslist',true);
 
   UpdateAddressList(cbAddress);
 
@@ -1036,7 +1036,7 @@ begin
 
         if fileexists(odLoadPointermap.FileName+'.addresslist') then
         begin
-          tstrings(cbAddress.tag).LoadFromFile(odLoadPointermap.FileName+'.addresslist');
+          tstrings(cbAddress.tag).LoadFromFile(odLoadPointermap.FileName+'.addresslist', true);
           UpdateAddressList(cbAddress);
         end;
 
@@ -1075,24 +1075,27 @@ begin
   if cbCompareToOtherPointermaps.checked then
   begin
     pdatafilelist:=TPointerFileList.create(il, self, cbShowAdvancedOptions.left-cbCompareToOtherPointermaps.left-8);
+    pdatafilelist.Color:=clWindow;
+    pdatafilelist.BevelOuter:=bvNone;
+    pdatafilelist.BorderStyle:=bsSingle;
     pdatafilelist.AnchorSideTop.Control:=cbCompareToOtherPointermaps;
     pdatafilelist.AnchorSideTop.Side:=asrBottom;
     pdatafilelist.AnchorSideLeft.Control:=cbCompareToOtherPointermaps;
     pdatafilelist.AnchorSideLeft.Side:=asrLeft;
 
-    pdatafilelist.AnchorSideRight.Control:=cbShowAdvancedOptions;
-    pdatafilelist.AnchorSideRight.Side:=asrLeft;
+    //pdatafilelist.AnchorSideRight.Control:=self;
+    //pdatafilelist.AnchorSideRight.Side:=asrRight;
 
     pdatafilelist.OnEmptyList:=PointerFileListEmpty;
     pdatafilelist.OnResize:=PointerFileListResize;
 
-    pdatafilelist.Anchors:=[akTop, akLeft, akRight];
+    pdatafilelist.Anchors:=[akTop, akLeft]; //, akRight];
 
     pdatafilelist.AutoSize:=true;
+    pdatafilelist.DoAutoSize;
+    pdatafilelist.AdjustPos(pdatafilelist);
 
-    panel3.AnchorSideTop.Control:=pdatafilelist;
-    panel3.AnchorSideTop.Side:=asrBottom;
-    panel3.BorderSpacing.Top:=5;;
+    cbShowAdvancedOptions.AnchorSideTop.Control:=pdatafilelist;
   end
   else
   begin
@@ -1103,9 +1106,7 @@ begin
     pdatafilelist.free;
     pdatafilelist:=nil;
 
-    panel3.AnchorSideTop.Control:=cbCompareToOtherPointermaps;
-    panel3.AnchorSideTop.Side:=asrBottom;
-        panel3.BorderSpacing.Top:=0;;
+    cbShowAdvancedOptions.AnchorSideTop.Control:=cbCompareToOtherPointermaps;
   end;
 
   //UpdateGuiBasedOnSavedPointerScanUsage;
@@ -1140,7 +1141,10 @@ begin
     if Reg.OpenKey('\Software\Cheat Engine\PSNNodeList', false) then
     begin
       oldlist:=tstringlist.create;
-      reg.GetKeyNames(oldlist);
+      try
+        reg.GetKeyNames(oldlist);
+      except
+      end;
 
       for i:=0 to oldlist.count-1 do
         reg.DeleteKey(oldlist[i]);
@@ -1265,7 +1269,7 @@ begin
   begin
     //get the addresslist from the scandata.addresslist file (if it exists)
     if fileexists(odLoadPointermap.filename+'.addresslist') then
-      tstrings(cbAddress.tag).LoadFromFile(odLoadPointermap.filename+'.addresslist');
+      tstrings(cbAddress.tag).LoadFromFile(odLoadPointermap.filename+'.addresslist', true);
   end
   else
     MainForm.addresslist.getAddressList(tstrings(cbAddress.tag));
@@ -1334,7 +1338,10 @@ begin
   if Reg.OpenKey('\Software\Cheat Engine\PSNNodeList', false) then
   begin
     list:=tstringlist.create;
-    Reg.GetKeyNames(list);
+    try
+      Reg.GetKeyNames(list);
+    except
+    end;
 
 
     for i:=0 to list.count-1 do

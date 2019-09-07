@@ -221,6 +221,14 @@ function LaunchMonoDataCollector()
   else
     dllname=dllname.."32.dll"
   end
+  
+  autoAssemble([[ 
+mono-2.0-bdwgc.mono_error_ok: 
+mov eax,1 
+ret 
+]]) --don't care if it fails
+
+  
 
   if injectDLL(getCheatEngineDir()..[[\autorun\dlls\]]..dllname)==false then
     print(translate("Failure injecting the MonoDatacollector dll"))
@@ -2682,8 +2690,12 @@ function mono_dissect()
 end
 
 function miMonoActivateClick(sender)
-  if LaunchMonoDataCollector()==0 then
-    showMessage(translate("Failure to launch"))
+  if monopipe then
+    monopipe.OnTimeout()
+  else  
+    if LaunchMonoDataCollector()==0 then
+      showMessage(translate("Failure to launch"))
+    end
   end
 end
 

@@ -106,7 +106,7 @@ published
   property OnClick;
   property OnColumnClick;
   property OnCompare;
-//  property OnContextPopup;
+  property OnContextPopup;
   property OnCustomDraw;
   property OnCustomDrawItem;
   property OnCustomDrawSubItem;
@@ -150,7 +150,7 @@ published
   property Max;
   property Min;
   property Position;
- // property OnContextPopup;
+  property OnContextPopup;
 //  property OnDragDrop;
 //  property OnDragOver;
 //  property OnEndDrag;
@@ -194,7 +194,7 @@ type TCETrackBar=class(TCustomTrackBar)
     property OnChange;
     property OnChangeBounds;
     property OnClick;
- //   property OnContextPopup;
+    property OnContextPopup;
 //    property OnDragDrop;
 //    property OnDragOver;
 //    property OnEndDrag;
@@ -255,7 +255,7 @@ type TCEListBox=class(TCustomListBox)
     property MultiSelect;
     property OnChangeBounds;
     property OnClick;
-    //property OnContextPopup;
+    property OnContextPopup;
     property OnDblClick;
   //  property OnDragDrop;
   //  property OnDragOver;
@@ -324,7 +324,7 @@ published
   property OnChangeBounds;
   property OnClick;
   property OnCloseUp;
- // property OnContextPopup;
+  property OnContextPopup;
   property OnDblClick;
 ////  property OnDragDrop;
  // property OnDragOver;
@@ -393,7 +393,7 @@ published
   property Visible;
   property OnChangeBounds;
   property OnClick;
- // property OnContextPopup;
+  property OnContextPopup;
   property OnDblClick;
 //  property OnDragDrop;
 //  property OnDockDrop;
@@ -467,7 +467,7 @@ published
     property ParentFont;
     property ParentColor;
     property ParentShowHint;
-   property PopupMenu;
+    property PopupMenu;
     property ShowHint;
     property TabOrder;
     property TabStop;
@@ -498,7 +498,7 @@ type TCECheckBox=class(TCustomCheckBox)
     property OnChange;
     property OnChangeBounds;
     property OnClick;
-    //property OnContextPopup;
+    property OnContextPopup;
    // property OnDragDrop;
    // property OnDragOver;
    // property OnEditingDone;
@@ -563,7 +563,7 @@ type TCEEdit=class(TCustomEdit)
     property OnChange;
     property OnChangeBounds;
     property OnClick;
- //   property OnContextPopup;
+    property OnContextPopup;
     property OnDblClick;
  //   property OnDragDrop;
  //   property OnDragOver;
@@ -609,13 +609,15 @@ type TCEForm=class(TCustomForm)
     fVisible: boolean;
     saveddesign: TMemorystream;
     fDoNotSaveInTable: boolean;
-    procedure paint; override;
+
     procedure OnWriteMethod(Writer: TWriter; Instance: TPersistent; PropInfo: PPropInfo; const MethodValue, DefMethodValue: TMethod; var Handled: boolean);
     procedure WriteComponentAsBinaryToStreamWithMethods(Astream: TStream);
     procedure setActive(state: boolean);
     function getActive: boolean;
 
     procedure SetMethodProperty(Reader: TReader; Instance: TPersistent; PropInfo: PPropInfo; const TheMethodName: string; var Handled: boolean);
+  protected
+    procedure paint; override;
   public
     designsurface: TJvDesignSurface;
     procedure ResyncWithLua(Base: TComponent); overload;
@@ -741,7 +743,7 @@ type TCEMemo=class(TCustomMemo)
     property MaxLength;
     property OnChange;
     property OnClick;
-  //  property OnContextPopup;
+    property OnContextPopup;
     property OnDblClick;
    // property OnDragDrop;
   //  property OnDragOver;
@@ -858,7 +860,7 @@ published
     property UseDockManager default True;
     property Visible;
     property OnClick;
-   // property OnContextPopup;
+    property OnContextPopup;
     property OnDockDrop;
     property OnDockOver;
     property OnDblClick;
@@ -920,7 +922,7 @@ published
   property OnMouseEnter;
   property OnMouseLeave;
   property OnChangeBounds;
-  //property OnContextPopup;
+  property OnContextPopup;
   property OnResize;
   property OnStartDrag;
   property OptimalFill;
@@ -949,7 +951,7 @@ type TCEButton=class(TCustomButton)
     property ModalResult;
     property OnChangeBounds;
     property OnClick;
-    //property OnContextPopup;
+    property OnContextPopup;
     //property OnDragDrop;
     //property OnDragOver;
     //property OnEndDrag;
@@ -1100,12 +1102,20 @@ var
   Writer: TWriter;
   DestroyDriver: Boolean;
   g: tguid;
+  s: string;
+  i: integer;
 begin
   if name='' then
   begin
     //an object NEEDS a name
     CreateGUID(g);
-    name:='NoName_'+GUIDToString(g);
+
+    s:=GUIDToString(g);
+    for i:=1 to length(s)-1 do
+      if s[i] in ['{','}','-'] then
+        s[i]:='_';
+
+    name:='NoName_'+s;
   end;
 
   DestroyDriver:=false;
@@ -1147,6 +1157,8 @@ begin
   wasactive:=active;
   active:=false;
 
+  if designsurface<>nil then
+    freeandnil(designsurface);
 
   //RegisterPropertyToSkip(TCEForm, 'Visible', '','');
 
@@ -1174,7 +1186,6 @@ begin
   end;
 
   active:=wasactive;
-
   ResyncWithLua;
 end;
 
@@ -1196,9 +1207,6 @@ begin
   savedDesign.position:=0;
 
   ResyncWithLua;
- // ss:=tstringstream.create('');
- // LRSObjectBinaryToText(savedDesign, ss);
- // showmessage(ss.DataString);
 end;
 
 procedure TCEForm.SaveToXML(Node: TDOMNode; dontdeactivate: boolean=false);
@@ -1274,8 +1282,8 @@ begin
       FreeMemAndNil(outputastext);
   end;
 
-  if dontdeactivate=false then
-    active:=wasactive;
+  //if dontdeactivate=false then
+  //  active:=wasactive;
 end;
 
 procedure TCEForm.LoadFromXML(Node: TDOMNode);
@@ -1365,7 +1373,7 @@ begin
   formnode:=xmldoc.appendchild(xmldoc.createElement('FormData'));
 
   SaveCurrentStateasDesign;
-  SaveToXML(formnode);
+  SaveToXML(formnode,true);
 
   WriteXML(xmldoc, filename);
 end;
@@ -1593,7 +1601,6 @@ initialization
   RegisterPropertyEditor(TypeInfo(TTVChangingEvent), nil, '', THiddenPropertyEditor);
   RegisterPropertyEditor(TypeInfo(TTVExpandedEvent), nil, '', THiddenPropertyEditor);
   RegisterPropertyEditor(TypeInfo(TTVCompareEvent), nil, '', THiddenPropertyEditor);
-  RegisterPropertyEditor(TypeInfo(TContextPopupEvent), nil, '', THiddenPropertyEditor);
   RegisterPropertyEditor(TypeInfo(TTVCreateNodeClassEvent), nil, '', THiddenPropertyEditor);
   RegisterPropertyEditor(TypeInfo(TTVCustomCreateNodeEvent), nil, '', THiddenPropertyEditor);
   RegisterPropertyEditor(TypeInfo(TTVExpandedEvent), nil, '', THiddenPropertyEditor);

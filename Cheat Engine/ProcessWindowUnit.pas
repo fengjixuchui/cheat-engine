@@ -26,9 +26,10 @@ type
 
   TProcessWindow = class(TForm)
     btnNetwork: TButton;
-    Button4: TButton;
+    btnAttachDebugger: TButton;
     CancelButton: TButton;
     FontDialog1: TFontDialog;
+    plImageList: TImageList;
     MainMenu1: TMainMenu;
     MenuItem1: TMenuItem;
     MenuItem2: TMenuItem;
@@ -72,7 +73,7 @@ type
     procedure btnProcesslistClick(Sender: TObject);
     procedure btnWindowListClick(Sender: TObject);
     procedure btnCreateThreadClick(Sender: TObject);
-    procedure Button4Click(Sender: TObject);
+    procedure btnAttachDebuggerClick(Sender: TObject);
     procedure btnOpenFileClick(Sender: TObject);
     procedure InputPIDmanually1Click(Sender: TObject);
     procedure Filter1Click(Sender: TObject);
@@ -204,7 +205,7 @@ begin
   begin
     if commonProcessesList=nil then commonProcessesList:=tstringlist.create;
     try
-      commonProcessesList.LoadFromFile(s);
+      commonProcessesList.LoadFromFile(s, true);
       for i:=commonProcessesList.Count-1 downto 0 do
       begin
         j:=pos('#', commonProcessesList[i]);
@@ -431,6 +432,29 @@ begin
     end;
   end;
 
+  if (processid<>0) and (UseFileAsMemory or Usephysical or usephysicaldbvm) then
+  begin
+    //swap back to processmemory
+    UseFileAsMemory:=false;
+    Usephysical:=false;
+    usephysicaldbvm:=false;
+    if formsettings.cbKernelOpenProcess.checked then
+      UseDBKOpenProcess
+    else
+      DONTUseDBKOpenProcess;
+
+    if formsettings.cbKernelQueryMemoryRegion.checked then
+      UseDBKQueryMemoryRegion
+    else
+      DONTUseDBKQueryMemoryRegion;
+
+    if formsettings.cbKernelReadWriteProcessMemory.checked then
+      UseDBKReadWriteMemory
+    else
+      DONTUseDBKReadWriteMemory;
+  end;
+
+
   Open_Process;
 
   ProcessSelected:=true;
@@ -524,7 +548,7 @@ begin
   end;
 end;
 
-procedure TProcessWindow.Button4Click(Sender: TObject);
+procedure TProcessWindow.btnAttachDebuggerClick(Sender: TObject);
 var ProcessIDString: String;
     i:               Integer;
 begin
@@ -717,6 +741,9 @@ end;
 
 procedure TProcessWindow.FormShow(Sender: TObject);
 begin
+  OKButton.Constraints.MinHeight:=trunc(1.2*btnAttachDebugger.height);
+  CancelButton.Constraints.MinHeight:=OKButton.Constraints.MinHeight;
+
   loadCommonProcessesList;
   errortrace:=100;
   try

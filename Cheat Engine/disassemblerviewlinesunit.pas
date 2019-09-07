@@ -93,7 +93,8 @@ implementation
 
 uses
   MemoryBrowserFormUnit, dissectCodeThread,debuggertypedefinitions,
-  dissectcodeunit, disassemblerviewunit, frmUltimap2Unit, frmcodefilterunit;
+  dissectcodeunit, disassemblerviewunit, frmUltimap2Unit, frmcodefilterunit,
+  BreakpointTypeDef, vmxfunctions;
 
 resourcestring
   rsUn = '(Unconditional)';
@@ -323,9 +324,15 @@ var
 
     iscurrentinstruction: boolean;
 
+    PA: qword;
+    BO: integer;
     b: byte;
 
+    inactive: boolean;
+
 begin
+
+  fcanvas.font.style:=[];
 
   iscurrentinstruction:=MemoryBrowser.lastdebugcontext.{$ifdef cpu64}rip{$else}EIP{$endif}=address;
 
@@ -528,15 +535,14 @@ begin
 
 
   if debuggerthread<>nil then
-    bp:=debuggerthread.isBreakpoint(faddress)
+    bp:=debuggerthread.isBreakpoint(faddress,0,true)
   else
     bp:=nil;
 
 
-  isbp:=(bp<>nil) and (bp.breakpointTrigger=bptExecute) and (bp.active) and (bp.markedfordeletion=false);
+  isbp:=(bp<>nil) and (bp.breakpointTrigger=bptExecute) and (bp.active or (bp.breakpointMethod=bpmException) ) and (bp.markedfordeletion=false);
   isultimap:=((frmUltimap2<>nil) and frmUltimap2.IsMatchingAddress(faddress)) or ((frmCodeFilter<>nil) and (frmCodeFilter.isBreakpoint(faddress,b) ));
-
-
+  isultimap:=isultimap or dbvm_isBreakpoint(faddress,PA,BO, b); //mark dbvm internal breakpoints with the same color as an ultimap bp
 
 
   if selected then
@@ -893,7 +899,7 @@ begin
 
           s:=copy(text, start,i-start);
           fcanvas.TextRect(ARect,x,y,AnsiToUtf8(s));
-          x:=x+fcanvas.TextWidth(s);
+          x:=x+fcanvas.TextWidth(s)+1;
 
           inc(i);
           while i<=length(text) do

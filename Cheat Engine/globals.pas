@@ -16,15 +16,19 @@ uses
 var
 //  AllIncludesCustomType: boolean;
   overridefont: TFont;
+  aprilfools: boolean;
 
   ScanAllTypes: TVariableTypes=[vtDword, vtSingle, vtDouble];
 
   buffersize: dword=512*1024;
 
   Skip_PAGE_NOCACHE: boolean=false;
+  Skip_PAGE_WRITECOMBINE: boolean=true;
   Scan_MEM_PRIVATE: boolean=true;
   Scan_MEM_IMAGE: boolean=true;
   Scan_MEM_MAPPED: boolean=false;
+
+  repeatDelay: integer=0;
 
   scan_dirtyonly: boolean=true;
   scan_pagedonly: boolean=true;

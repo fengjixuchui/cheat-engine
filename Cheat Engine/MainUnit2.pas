@@ -11,10 +11,10 @@ uses windows, dialogs,forms,classes,LCLIntf, LCLProc, sysutils,registry,ComCtrls
      memscan,plugin, hotkeyhandler,frmProcessWatcherunit, newkernelhandler,
      debuggertypedefinitions, commonTypeDefs;
 
-const ceversion=6.8999;
+const ceversion=7.0;
 
 resourcestring
-  cename = 'Cheat Engine 6.8.x';
+  cename = 'Cheat Engine 7.0';
   rsPleaseWait = 'Please Wait!';
 
 procedure UpdateToolsMenu;
@@ -24,7 +24,7 @@ procedure initcetitle;
 
 
 
-const beta=' Alpha'; //empty this for a release
+const beta=''; //empty this for a release
 
 var
   CEnorm:string;
@@ -60,6 +60,7 @@ resourcestring
 
   strChangedValue='Changed value';
   strUnchangedValue='Unchanged value';
+  strIgnoreValue='Ignore value';
   strUnknownInitialValue='Unknown initial value';
   strCompareToFirstScan='Compare to first scan';
   strCompareToLastScan='Compare to last scan';
@@ -89,7 +90,7 @@ implementation
 
 
 uses KernelDebugger,mainunit, DebugHelper, CustomTypeHandler, ProcessList, Globals,
-     frmEditHistoryUnit, DBK32functions, frameHotkeyConfigUnit;
+     frmEditHistoryUnit, DBK32functions, frameHotkeyConfigUnit, UnexpectedExceptionsHelper;
 
 procedure UpdateToolsMenu;
 var i: integer;
@@ -566,10 +567,21 @@ begin
             
           Skip_PAGE_NOCACHE:=cbSkip_PAGE_NOCACHE.Checked;
 
+          if reg.ValueExists('skip PAGE_WRITECOMBINE') then
+            cbSkip_PAGE_WRITECOMBINE.Checked:=reg.readbool('skip PAGE_WRITECOMBINE');
+
+          Skip_PAGE_WRITECOMBINE:=cbSkip_PAGE_WRITECOMBINE.Checked;
+
+
           if reg.ValueExists('Pause when scanning on by default') then
             cbPauseWhenScanningOnByDefault.Checked:=reg.readbool('Pause when scanning on by default');
 
           MainForm.cbPauseWhileScanning.Checked:=cbPauseWhenScanningOnByDefault.checked;
+
+          if reg.ValueExists('Repeat Delay') then
+            Globals.repeatDelay:=reg.ReadInteger('Repeat Delay');
+
+          formsettings.edtRepeatDelay.text:=inttostr(Globals.repeatDelay);
 
 
           if reg.ValueExists('Hide all windows') then
@@ -664,6 +676,29 @@ begin
           if reg.ValueExists('Wait After Gui Update') then
             waitafterguiupdate:=reg.ReadBool('Wait After Gui Update');
           cbWaitAfterGuiUpdate.checked:=waitafterguiupdate;
+
+          if reg.ValueExists('Unexpected Breakpoint Behaviour') then
+          begin
+            case reg.ReadInteger('Unexpected Breakpoint Behaviour') of
+              0:
+              begin
+                miUnexpectedBreakpointsIgnore.checked:=true;
+                UnexpectedExceptionAction:=ueaIgnore;
+              end;
+
+              1:
+              begin
+                miUnexpectedBreakpointsBreak.checked:=true;
+                UnexpectedExceptionAction:=ueaBreak;
+              end;
+
+              2:
+              begin
+                miUnexpectedBreakpointsBreakWhenInsideRegion.checked;
+                UnexpectedExceptionAction:=ueaBreakIfInRegion;
+              end;
+            end;
+          end;
 
 
           if reg.ValueExists('Use Global Debug Routines') then
@@ -768,6 +803,13 @@ begin
           end;
           mainform.tLuaGCActive.enabled:=cbLuaGarbageCollectAll.checked;
           mainform.tLuaGCPassive.enabled:=cbLuaPassiveGarbageCollection.checked;
+
+
+          if reg.ValueExists('use thread to freeze') then
+          begin
+            cbUseThreadForFreeze.checked:=reg.ReadBool('use thread to freeze');
+            mainform.UseThreadToFreeze:=cbUseThreadForFreeze.checked;
+          end;
         end;
 
 
@@ -779,7 +821,7 @@ begin
       begin
         names:=TStringList.create;
         try
-          reg.GetValueNames(names);
+          reg.GetValueNames(names); //fpc 3.2.0 can raise an exception here as well
           names.sort;
           for i:=0 to names.count-1 do
           begin
@@ -804,9 +846,9 @@ begin
             except
             end;
           end;
-        finally
-          names.free;
+        except
         end;
+        freeandnil(names);
       end;
       UpdateToolsMenu;
 
@@ -885,6 +927,10 @@ end;
 procedure initcetitle;
 begin
   CEnorm:=cename+BETA;  //.';
+
+{$ifdef XDEBUG}
+  CEnorm:=CENorm+' Debug Build';
+{$endif}
   Application.Title:=CENorm;
 
 

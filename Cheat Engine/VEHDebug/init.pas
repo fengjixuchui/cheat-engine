@@ -60,8 +60,6 @@ begin
     begin
       if lpte.th32OwnerProcessID=cpid then
       begin
-
-
         if isfirst then
         begin
           //create process
@@ -153,6 +151,8 @@ begin
     OutputDebugString(pchar('GetLastError='+inttostr(getlasterror)));
     exit;
   end;
+
+  VEHSharedMem.VEHVersion:=$cece0000+VEHVERSION;
 
 
   OutputDebugString(pchar('HasDebugEvent='+inttohex(VEHSharedMem.HasDebugEvent,8)));

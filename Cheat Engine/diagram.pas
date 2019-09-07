@@ -8,6 +8,8 @@ uses
   windows, Classes, SysUtils, controls,Types, graphics, diagramblock, diagramlink, diagramtypes,
   LMessages, GL, glu, GLext, dialogs, StdCtrls, ExtCtrls;
 
+const diagramversion=1;
+
 type
   TDiagram=class(TCustomControl)
   private
@@ -59,9 +61,12 @@ type
     updater: TTimer;
     nopaint: boolean;
 
+    renderCanvas: TCanvas;
+
     procedure updaterTimerEvent(sender: TObject);
     procedure scrollbarchange(sender: TObject);
     procedure NotifyBlockDestroy(sender: TObject);
+    procedure NotifyLinkDestroy(sender: TObject);
     procedure updateBlockDragPosition(xpos,ypos: integer);
     procedure updateResizePosition(xpos,ypos: integer);
     procedure updatePointDragPosition(xpos,ypos: integer);
@@ -118,6 +123,7 @@ type
     procedure updateScrollbars(maxx,maxy: integer); virtual;
 
     procedure SetParent(NewParent: TWinControl); override;
+
     //procedure DblClick; override;
   public
     function createBlock: TDiagramBlock;
@@ -126,6 +132,14 @@ type
     procedure getConnectionsToBlock(b: TDiagramBlock; list: TList);
     procedure getConnectionsFromBlock(b: TDiagramBlock; list: TList);
     procedure render;
+
+    procedure saveToStream(s: TStream);
+    procedure loadFromStream(s: TStream);
+    procedure saveToFile(filename: string);
+    procedure loadFromFile(filename: string);
+    procedure saveAsImage(filename: string);
+
+    function getObjectAt(p: TPoint): TObject;
 
     property Block[index: integer]: TDiagramBlock read getBlock;
     property Link[index: integer]:TDiagramLink read getLink;
@@ -389,6 +403,9 @@ var
     inserted:=true;
   end;
 begin
+  dp.x:=0;
+  dp.y:=0;
+
   for i:=0 to blocks.count-1 do
   begin
     b:=TDiagramBlock(blocks[i]);
@@ -605,6 +622,11 @@ begin
   RepaintOrRender;
 end;
 
+procedure TDiagram.NotifyLinkDestroy(sender: TObject);
+begin
+  links.Remove(sender);
+end;
+
 procedure TDiagram.NotifyBlockDestroy(sender: TObject);
 var
   l: TDiagramLink;
@@ -623,14 +645,13 @@ begin
       begin
         l:=TDiagramLink(links[i]);
         if l.hasLinkToBlock(b) then
-        begin
-          l.free;
-          links.Delete(i);
-        end
+          l.free
         else
           inc(i);
       end;
     end;
+
+    blocks.Remove(b);
   end;
 end;
 
@@ -649,79 +670,83 @@ var
 begin
   inherited mousedown(Button, Shift, X,Y);
 
-
-
-  //adjust for zoom
-  x:=trunc(x / fzoom);
-  y:=trunc(y / fzoom);
-
-  inc(x,scrollx);
-  inc(y,scrolly);
-
-  startedresizing:=false;
-  for i:=blocks.count-1 downto 0 do
+  if button=mbLeft then
   begin
-    b:=TDiagramBlock(blocks[i]);
-    if fAllowUserToMoveBlocks and b.IsInsideHeader(x,y) then
-    begin
-      draggedBlock.Block:=b;
-      draggedBlock.Point:=point(x-b.x,y-b.y);
-      exit;
-    end
-    else
-    if allowUserToResizeBlocks and b.IsAtBorder(x,y,side) then
-    begin
-      resizing.block:=b;
-      resizing.side:=side;
-      startedresizing:=true; //just gotta check the lines first
+    //adjust for zoom
+    x:=trunc(x / fzoom);
+    y:=trunc(y / fzoom);
 
-      if allowUserToChangeAttachPoints then
-        break
+    inc(x,scrollx);
+    inc(y,scrolly);
+
+    startedresizing:=false;
+    for i:=blocks.count-1 downto 0 do
+    begin
+      b:=TDiagramBlock(blocks[i]);
+      if fAllowUserToMoveBlocks and ((b.DragBody and b.IsInsideBody(x,y)) or (b.IsInsideHeader(x,y))) then
+      begin
+        draggedBlock.Block:=b;
+        draggedBlock.Point:=point(x-b.x,y-b.y);
+
+        if assigned(b.OnDragStart) then
+          b.OnDragStart(b);
+
+        exit;
+      end
       else
-        exit;
-    end;
-  end;
-
-  for i:=links.count-1 downto 0 do
-  begin
-    l:=TDiagramLink(links[i]);
-
-    if AllowUserToMovePlotPoints then
-    begin
-      PointIndex:=l.getPointIndexAt(x,y);
-      if pointindex<>-1 then
+      if allowUserToResizeBlocks and b.IsAtBorder(x,y,side) then
       begin
-        draggedPoint.Link:=l;
-        draggedPoint.PointIndex:=PointIndex;
-        exit;
+        resizing.block:=b;
+        resizing.side:=side;
+        startedresizing:=true; //just gotta check the lines first
+
+        if allowUserToChangeAttachPoints then
+          break
+        else
+          exit;
       end;
     end;
 
-    if allowUserToChangeAttachPoints and l.isAtAttachPoint(x,y, bsd) then
+    for i:=links.count-1 downto 0 do
     begin
-      if startedresizing then resizing.block:=nil; //nope, attachpoint changing takes priority
-      draggedSideAttachPoint.block:=bsd.block;
-      draggedSideAttachPoint.link:=l;
-      exit;
-    end;
+      l:=TDiagramLink(links[i]);
 
-    if allowUserToCreatePlotPoints and l.isOverLine(x,y) then
-    begin
-      l.createPoint(point(x,y));
-
-      pointindex:=l.getPointIndexAt(x,y);
-      if pointindex<>-1 then
+      if AllowUserToMovePlotPoints then
       begin
-        draggedPoint.Link:=l;
-        draggedPoint.PointIndex:=pointindex;
+        PointIndex:=l.getPointIndexAt(x,y);
+        if pointindex<>-1 then
+        begin
+          draggedPoint.Link:=l;
+          draggedPoint.PointIndex:=PointIndex;
+          exit;
+        end;
       end;
 
-      repaintOrRender;
+      if allowUserToChangeAttachPoints and l.isAtAttachPoint(x,y, bsd) then
+      begin
+        if startedresizing then resizing.block:=nil; //nope, attachpoint changing takes priority
+        draggedSideAttachPoint.block:=bsd.block;
+        draggedSideAttachPoint.link:=l;
+        exit;
+      end;
 
-      exit;
+      if allowUserToCreatePlotPoints and l.isOverLine(x,y) then
+      begin
+        l.createPoint(point(x,y));
+
+        pointindex:=l.getPointIndexAt(x,y);
+        if pointindex<>-1 then
+        begin
+          draggedPoint.Link:=l;
+          draggedPoint.PointIndex:=pointindex;
+        end;
+
+        repaintOrRender;
+
+        exit;
+      end;
     end;
   end;
-
 
 end;
 
@@ -742,6 +767,11 @@ begin
   draggedBlock.Block.x:=xpos-draggedBlock.point.x;
   draggedBlock.Block.y:=ypos-draggedBlock.point.y;
   DoAutoSideUpdate;
+
+
+  if assigned(draggedBlock.block.OnDrag) then
+    draggedBlock.block.OnDrag(draggedBlock.block);
+
   repaintOrRender;
 end;
 
@@ -843,6 +873,7 @@ procedure TDiagram.WMLButtonDBLCLK(var Message: TLMLButtonDblClk);
 var
   i: integer;
   pt: tpoint;
+  l: TDiagramLink;
 begin
   inherited WMLButtonDBLCLK(message);
 
@@ -854,12 +885,18 @@ begin
   begin
     if TDiagramBlock(blocks[i]).isInside(pt.x,pt.y) then
     begin
+      draggedblock.block:=nil;
       TDiagramBlock(blocks[i]).DblClick(pt.x,pt.y);
       exit;
     end;
   end;
 
-
+  for i:=0 to links.count-1 do
+  begin
+    l:=TDiagramLink(links[i]);
+    if assigned(l.OnDblClick) and l.isOverLine(pt.x,pt.y) then
+      l.OnDblClick(l);
+  end;
 end;
 
 procedure TDiagram.MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
@@ -876,6 +913,10 @@ begin
   if draggedblock.block<>nil then
   begin
     updateBlockDragPosition(x,y);
+
+    if assigned(draggedblock.block.OnDragEnd) then
+      draggedblock.block.OnDragStart(draggedblock.block);
+
     draggedBlock.block:=nil;
   end;
 
@@ -901,6 +942,7 @@ begin
 
 end;
 
+
 procedure TDiagram.MouseMove(Shift: TShiftState; X, Y: Integer);
 var
   i: integer;
@@ -912,6 +954,8 @@ var
   newcursor: TCursor;
 begin
   inherited mousemove(Shift, X,Y);
+
+  if (links=nil) or (blocks=nil) then exit;
 
 
   //adjust for zoom
@@ -1000,7 +1044,7 @@ var
   newscrolly: integer;
 begin
   result:=false;
-  if shift<>[ssshift] then
+  if (shift<>[ssshift]) and (not (ssCtrl in shift)) then
   begin
     if vscrollbar.Visible then
     begin
@@ -1114,6 +1158,32 @@ begin
     InitializeOpenGL;
 end;
 
+
+function TDiagram.getObjectAt(p: TPoint): TObject;
+var
+  i: integer;
+  b: TDiagramBlock;
+  l: TDiagramLink;
+begin
+  for i:=blocks.count-1 downto 0 do
+  begin
+    b:=TDiagramBlock(blocks[i]);
+
+    if b.IsInside(p.x,p.y) then
+      exit(b);
+  end;
+
+  for i:=links.count-1 downto 0 do
+  begin
+    l:=TDiagramLink(links[i]);
+    if l.isOverLine(p.x,p.y) then
+      exit(l);
+  end;
+
+  result:=nil;
+end;
+
+
 procedure TDiagram.SetParent(NewParent: TWinControl);
 var
   oldparent: TWinControl;
@@ -1127,6 +1197,8 @@ begin
 
   if UseOpenGL and assigned(ChoosePixelFormat) and (NewParent<>nil) and (oldparent=nil) then
     InitializeOpenGL;
+
+  rendercanvas:=canvas;
 
  // UseOpenGL:=true; //test
 end;
@@ -1196,6 +1268,129 @@ begin
     end;
 
   end;
+end;
+
+procedure TDiagram.saveToStream(s: TStream);
+var i: integer;
+begin
+  s.WriteAnsiString('CEDIAG');
+  s.WriteWord(diagramversion);
+  s.WriteDWord(BlockCount);
+  for i:=0 to blockcount-1 do
+  begin
+    block[i].BlockID:=i;
+    Block[i].saveToStream(s);
+  end;
+
+  s.WriteDWord(LinkCount);
+  for i:=0 to LinkCount-1 do
+    Link[i].saveTostream(s);
+end;
+
+procedure TDiagram.loadFromStream(s: TStream);
+var
+  i: integer;
+  c: integer;
+  b: TDiagramBlock;
+  l: TDiagramLink;
+begin
+  if s.ReadAnsiString<>'CEDIAG' then raise exception.create('Invalid diagram file');
+  if s.ReadWord>diagramversion then
+    raise exception.create('Unknown diagram version');
+
+  while links.count>0 do
+    TDiagramLink(links[0]).Free;
+
+  links.Clear;
+
+  while blocks.count>0 do
+    TDiagramBlock(blocks[0]).Free;
+
+  blocks.clear;
+
+  c:=s.ReadDWord;
+  for i:=0 to c-1 do
+  begin
+    b:=TDiagramBlock.createFromStream(diagramConfig, s);
+    blocks.add(b);
+    b.OnDestroy:=@NotifyBlockDestroy;
+  end;
+
+  c:=s.ReadDWord;
+  for i:=0 to c-1 do
+  begin
+    l:=TDiagramLink.createFromStream(diagramconfig, s, blocks);
+    links.add(l);
+    l.OnDestroy:=@NotifyLinkDestroy;
+  end;
+
+  RepaintOrRender;
+end;
+
+procedure TDiagram.saveToFile(filename: string);
+var
+  f: tfilestream;
+  i: integer;
+begin
+  //going for binary as that's faster to deal with multiple points. Perhaps in the future detect if the extension if XML and save as xml
+  f:=tfilestream.Create(filename, fmCreate);
+  try
+    savetostream(f);
+  finally
+    f.free;
+  end;
+end;
+
+procedure TDiagram.loadFromFile(filename: string);
+var
+  f: tfilestream;
+
+begin
+  f:=tfilestream.Create(filename, fmOpenRead);
+  try
+    loadFromStream(f);
+  finally
+    f.free;
+  end;
+end;
+
+procedure TDiagram.saveAsImage(filename: string);
+var
+  openglstatus: boolean;
+  img: TPortableNetworkGraphic;
+begin
+  openglstatus:=UseOpenGL;
+
+  UseOpenGL:=false;
+
+  render;
+  //width and hight are known now
+
+  img:=TPortableNetworkGraphic.Create;
+  img.Width:=max(lastMaxX+8, width);
+  img.Height:=max(lastMaxY+8, height);
+
+
+  img.canvas.Brush.Assign(canvas.brush);
+  img.canvas.pen.Assign(canvas.pen);
+  img.canvas.Font.Assign(canvas.font);
+
+
+
+  renderCanvas:=img.canvas;
+
+  renderCanvas.brush.color:=BackGroundColor;
+  renderCanvas.Clear;
+
+  renderCanvas.FillRect(0,0,img.Width,img.Height);
+
+  render;
+  rendercanvas:=canvas;
+
+  img.SaveToFile(filename);
+  img.free;
+
+  UseOpenGL:=openglstatus;
 end;
 
 procedure TDiagram.render;
@@ -1278,7 +1473,7 @@ begin
   end
   else
   begin
-    diagramconfig.canvas:=canvas;
+    diagramconfig.canvas:=rendercanvas;
   end;
 
   diagramconfig.scrollx:=ScrollX;
@@ -1310,6 +1505,9 @@ begin
   lastMaxX:=maxx;
   lastMaxY:=maxy;
   updateScrollbars(maxx,maxy);
+
+  if assigned(OnPaint) then
+    OnPaint(self);
 end;
 
 
@@ -1360,7 +1558,9 @@ begin
   d.sideposition:=0;
   l:=TDiagramLink.create(diagramConfig,o, d);
 
+
   links.add(l);
+  l.OnDestroy:=@NotifyLinkDestroy;
   result:=l;
 end;
 
@@ -1369,6 +1569,7 @@ var l: TDiagramLink;
 begin
   l:=TDiagramLink.create(diagramConfig,origin, destination);
   links.add(l);
+  l.OnDestroy:=@NotifyLinkDestroy;
 
   result:=l;
 end;
@@ -1451,14 +1652,14 @@ end;
 destructor TDiagram.Destroy;
 var i: integer;
 begin
-  for i:=0 to links.count-1 do
-    TDiagramLink(links[i]).free;
+  while links.count>0 do
+    TDiagramLink(links[0]).free;
+
+  while blocks.count>0 do
+    TDiagramBlock(blocks[0]).free;
 
   links.free;
   links:=nil;
-
-  for i:=0 to blocks.count-1 do
-    TDiagramBlock(blocks[i]).free;
 
   blocks.Free;
   blocks:=nil;

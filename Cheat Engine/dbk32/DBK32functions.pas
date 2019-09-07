@@ -13,7 +13,7 @@ uses jwawindows, windows, sysutils, classes, types, registry, multicpuexecution,
 
 
 
-const currentversion=2000024;
+const currentversion=2000026;
 
 const FILE_ANY_ACCESS=0;
 const FILE_SPECIAL_ACCESS=FILE_ANY_ACCESS;
@@ -143,6 +143,8 @@ const IOCTL_CE_QUERYINFORMATIONPROCESS= (IOCTL_UNKNOWN_BASE shl 16) or ($085e sh
 
 const IOCTL_CE_LOCK_MEMORY            = (IOCTL_UNKNOWN_BASE shl 16) or ($0860 shl 2) or (METHOD_BUFFERED ) or (FILE_RW_ACCESS shl 14);
 const IOCTL_CE_UNLOCK_MEMORY          = (IOCTL_UNKNOWN_BASE shl 16) or ($0861 shl 2) or (METHOD_BUFFERED ) or (FILE_RW_ACCESS shl 14);
+
+const IOCTL_CE_ALLOCATE_MEMORY_FOR_DBVM = (IOCTL_UNKNOWN_BASE shl 16) or ($0862 shl 2) or (METHOD_BUFFERED ) or (FILE_RW_ACCESS shl 14);
 
 
 type TDeviceIoControl=function(hDevice: THandle; dwIoControlCode: DWORD; lpInBuffer: Pointer; nInBufferSize: DWORD; lpOutBuffer: Pointer; nOutBufferSize: DWORD; var lpBytesReturned: DWORD; lpOverlapped: POverlapped): BOOL; stdcall;
@@ -296,8 +298,8 @@ function GetDebugportOffset: DWORD; stdcall;
 function GetThreadsProcessOffset: dword; stdcall;
 function GetThreadListEntryOffset: dword; stdcall;
 
-function ReadPhysicalMemory(hProcess:THANDLE;lpBaseAddress:pointer;lpBuffer:pointer;nSize:DWORD;var NumberOfBytesRead:DWORD):BOOL; stdcall;
-function WritePhysicalMemory(hProcess:THANDLE;lpBaseAddress:pointer;lpBuffer:pointer;nSize:DWORD;var NumberOfBytesWritten:DWORD):BOOL; stdcall;
+function ReadPhysicalMemory(hProcess:THANDLE;lpBaseAddress:pointer;lpBuffer:pointer;nSize:DWORD;var NumberOfBytesRead:PTRUINT):BOOL; stdcall;
+function WritePhysicalMemory(hProcess:THANDLE;lpBaseAddress:pointer;lpBuffer:pointer;nSize:DWORD;var NumberOfBytesWritten:PTRUINT):BOOL; stdcall;
 function GetPhysicalAddress(hProcess:THandle;lpBaseAddress:pointer;var Address:int64): BOOL; stdcall;
 function GetMemoryRanges(var ranges: TPhysicalMemoryRanges): boolean;
 function VirtualQueryExPhysical(hProcess: THandle; lpAddress: Pointer; var lpBuffer: TMemoryBasicInformation; dwLength: DWORD): DWORD; stdcall;
@@ -390,6 +392,8 @@ const IOCTL_CE_ULTIMAP2_RESUME        = (IOCTL_UNKNOWN_BASE shl 16) or ($0855 sh
 procedure dbk_test;
 
 procedure LaunchDBVM(cpuid: integer); stdcall;
+procedure allocateMemoryForDBVM(pagecount: QWORD);
+
 
 function GetGDT(limit: pword):ptruint; stdcall;
 
@@ -565,6 +569,8 @@ begin
     inp.KernelMode:=1
   else
     inp.KernelMode:=0;
+
+  OutputDebugString(format('logUserMode=%d logKernelMode=%d', [inp.UserMode, inp.KernelMode]));
 
   for i:=0 to inp.rangecount-1 do
   begin
@@ -1276,7 +1282,7 @@ begin
 end;
 
 
-function WritePhysicalMemory(hProcess:THANDLE;lpBaseAddress:pointer;lpBuffer:pointer;nSize:DWORD;var NumberOfBytesWritten:DWORD):BOOL; stdcall;
+function WritePhysicalMemory(hProcess:THANDLE;lpBaseAddress:pointer;lpBuffer:pointer;nSize:DWORD;var NumberOfBytesWritten:PTRUINT):BOOL; stdcall;
 type TInputstruct=record
   startaddress: uint64;
   bytestowrite: uint64;
@@ -1336,7 +1342,7 @@ begin
 end;
 
 
-function ReadPhysicalMemory(hProcess:THANDLE;lpBaseAddress:pointer;lpBuffer:pointer;nSize:DWORD;var NumberOfBytesRead:DWORD):BOOL; stdcall;
+function ReadPhysicalMemory(hProcess:THANDLE;lpBaseAddress:pointer;lpBuffer:pointer;nSize:DWORD;var NumberOfBytesRead:PTRUINT):BOOL; stdcall;
 type TInputstruct=packed record
   startaddress: qword;
   bytestoread: qword;
@@ -2667,7 +2673,7 @@ begin
   if (hdevice<>INVALID_HANDLE_VALUE) then
   begin
     cc:=IOCTL_CE_READMSR;
-    OutputDebugString(pchar('dbk32functions.pas: Reading from msr '+inttohex(msr,1)));
+    //OutputDebugString(pchar('dbk32functions.pas: Reading from msr '+inttohex(msr,1)));
     if deviceiocontrol(hdevice,cc,@msr,sizeof(msr),@msrvalue,sizeof(msrvalue),cc,nil) then
       result:=msrvalue
     else
@@ -2840,6 +2846,11 @@ begin
   end;
 end;
 
+procedure allocateMemoryForDBVM(pagecount: qword);
+var br: dword;
+begin
+  if hdevice<>INVALID_HANDLE_VALUE then deviceiocontrol(hdevice,IOCTL_CE_ALLOCATE_MEMORY_FOR_DBVM,@pagecount,sizeof(pagecount),nil,0,br,nil);
+end;
 
 function RewriteKernel32:boolean; stdcall;
 begin

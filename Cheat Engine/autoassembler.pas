@@ -2189,7 +2189,8 @@ begin
 
               varsize:=length(s1);
 
-              while (j<length(labels)) and (length(labels[j].labelname)>varsize) do
+              j:=0;
+              while (j<length(labels)) and (length(labels[j].labelname)>=varsize) do
               begin
                 if labels[j].labelname=s1 then
                   raise exception.Create(Format(rsIsBeingRedeclared, [s1]));
@@ -2465,7 +2466,7 @@ begin
             except
               //add this as a label if a potential label
               if potentiallabels.IndexOf(copy(currentline,1,length(currentline)-1))=-1 then
-                raise exception.Create(rsThisAddressSpecifierIsNotValid);
+                raise symexception.Create(rsThisAddressSpecifierIsNotValid);
 
               j:=length(labels);
               setlength(labels,j+1);

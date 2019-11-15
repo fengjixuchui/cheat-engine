@@ -8757,6 +8757,8 @@ end;
 
 
 function executeMethod(L:PLua_state): integer; cdecl; //executecodeex(callmethod, timeout, address, {instance},{param1},{param2},{param3},{...})
+//executeCodeEx(callmethod, timeout, address, {type=x,value=param1} or param1,{type=x,value=param2} or param2,...)
+
 //callmethod:
 //0: stdcall
 //1: cdecl
@@ -9924,6 +9926,33 @@ begin
     lp:=lua_tointeger(L,4);
 
     lua_pushinteger(L, SendMessageA(h, Msg, wp, lp));
+    result:=1;
+  end;
+end;
+
+function lua_sendMessageTimeout(L:PLua_state): integer; cdecl;
+var h: HWND;
+    Msg:  UINT;
+    wp: WPARAM;
+    lp: LPARAM;
+    flags, timeout: uint;
+    r: DWORD_PTR;
+begin
+  result:=0;
+  if lua_gettop(L)=4 then
+  begin
+    h:=lua_tointeger(L,1);
+    msg:=lua_tointeger(L,2);
+    wp:=lua_tointeger(L,3);
+    lp:=lua_tointeger(L,4);
+    flags:=lua_tointeger(L,5);
+    timeout:=lua_tointeger(L,6);
+
+    if SendMessageTimeoutA(h, Msg, wp, lp, flags,timeout, r)<>0 then
+      lua_pushinteger(L,r)
+    else
+      lua_pushnil(L);
+
     result:=1;
   end;
 end;
@@ -11144,17 +11173,25 @@ var
   oldprocessname: string;
   oldprocess: dword;
   oldprocesshandle: thandle;
+  parameters: integer;
+  startaddress: ptruint;
 
 begin
   result:=1;
-  if lua_gettop(L)>=1 then
+  parameters:=lua_gettop(L);
+  if parameters>=1 then
   begin
     filename:=Lua_ToString(L,1);
 
-    if lua_gettop(L)>=1 then
+    if parameters>=2 then
       is64bit:=lua_toboolean(L,2)
     else
       is64bit:=false;
+
+    if parameters>=3 then
+      startaddress:=lua_tointeger(L,3)
+    else
+      startaddress:=0;
 
     DetachIfPossible;
     oldprocessname := copy(mainform.ProcessLabel.Caption, pos('-', mainform.ProcessLabel.Caption) + 1, length(mainform.ProcessLabel.Caption));
@@ -11162,16 +11199,18 @@ begin
     oldprocesshandle := processhandle;
 
     try
-      DBKFileAsMemory(filename);
+      DBKFileAsMemory(filename,startaddress);
 
     except
       lua_pushboolean(L,false);
       exit;
     end;
 
-    ProcessHandler.ProcessHandle:=THandle(-1);
+    ProcessHandler.ProcessHandle:=THandle(-2);
 
     MainForm.ProcessLabel.caption:=extractfilename(filename);
+    MainForm.miSaveFile.visible:=true;
+
     ProcessHandler.processid:=$FFFFFFFF;
 
     ProcessHandler.is64Bit:=is64bit;
@@ -11370,7 +11409,7 @@ end;
 
 function lua_getHandleList(L: PLua_state): integer; cdecl;
 var
-  shi: PSYSTEM_HANDLE_INFORMATION;
+  shi: PSYSTEM_HANDLE_INFORMATION=nil;
   rl: ulong;
   r: ntstatus;
   i,j: integer;
@@ -11465,6 +11504,9 @@ begin
 
     end;
   end;
+
+  if shi<>nil then
+    FreeMemAndNil(shi);
 
   result:=1;
 end;
@@ -12329,6 +12371,8 @@ begin
     lua_register(L, 'unlockMemory', lua_unlockMemory);
 
     lua_register(L, 'sendMessage', lua_sendMessage);
+    lua_register(L, 'sendMessageTimeout', lua_sendMessageTimeout);
+
     lua_register(L, 'findWindow', lua_findWindow);
     lua_register(L, 'getWindow', lua_getWindow);
     lua_register(L, 'getWindowProcessID', lua_getWindowProcessID);
@@ -12421,6 +12465,7 @@ begin
 
     lua_register(L, 'enumExports', lua_enumExports);
     lua_register(L, 'duplicateHandle', lua_duplicateHandle);
+
 
     initializeLuaRemoteThread;
 

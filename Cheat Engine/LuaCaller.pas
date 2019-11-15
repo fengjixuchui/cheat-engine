@@ -91,7 +91,7 @@ type
       procedure MenuDrawItemEvent(Sender: TObject; Canvas: TCanvas; ARect: TRect; State: TOwnerDrawState);
       procedure DBCustomDrawEvent(Sender: TDiagramBlock; const ARect: TRect; beforePaint: boolean; var DefaultDraw: Boolean);
       procedure ContextPopupEvent(Sender: TObject; MousePos: TPoint; var Handled: Boolean);
-
+      procedure TabGetImageEvent(Sender: TObject; TabIndex: Integer; var ImageIndex: Integer);
 
       procedure synchronize;
 
@@ -1492,7 +1492,7 @@ begin
     lua_pushinteger(LuaVM, index);
     lua_pushrect(LuaVM, arect);
 
-    ti:=typeinfo(TFormState);
+    ti:=typeinfo(TOwnerDrawState);
     lua_pushstring(LuaVM, SetToString(ti, integer(state),false));
     lua_pcall(LuaVM, 4,0,0);
   finally
@@ -1548,6 +1548,25 @@ begin
     lua_pushpoint(LuaVM, MousePos);
     lua_pcall(LuaVM, 2,1,0);
     Handled:=lua_toboolean(LuaVM,-1);
+  finally
+    lua_settop(LuaVM, oldstack);
+  end;
+end;
+
+procedure TLuaCaller.TabGetImageEvent(Sender: TObject; TabIndex: Integer; var ImageIndex: Integer);
+var
+  oldstack: integer;
+begin
+  oldstack:=lua_gettop(Luavm);
+  try
+    pushFunction;
+    luaclass_newClass(LuaVM, Sender);
+    lua_pushinteger(LuaVM, TabIndex);
+    lua_pcall(LuaVM, 2,1,0);
+    if lua_isnil(LuaVM,-1) then
+      ImageIndex:=-1
+    else
+      ImageIndex:=lua_tointeger(LuaVM,-1);
   finally
     lua_settop(LuaVM, oldstack);
   end;
@@ -2526,6 +2545,8 @@ var
   state: TOwnerDrawState;
   m: TMethod;
   ti: PTypeInfo;
+
+  drawstatestring: string;
 begin
   result:=0;
   if lua_gettop(L)=4 then
@@ -2537,7 +2558,9 @@ begin
     rect:=lua_toRect(L,3);
 
     ti:=typeinfo(TOwnerDrawState);
-    state:=TOwnerDrawState(StringToSet(ti,Lua_ToString(L,4)));
+
+    drawstatestring:=Lua_ToString(L,4);
+    state:=TOwnerDrawState(StringToSet(ti,drawstatestring));
 
     TDrawItemEvent(m)(Control, index, rect, state);
   end
@@ -2625,6 +2648,29 @@ begin
 end;
 
 
+function LuaCaller_TabGetImageEvent(L: PLua_state): integer; cdecl; //(Sender: TObject; TabIndex: Integer; var ImageIndex: Integer);
+var
+  sender: TObject;
+  tabindex: integer;
+  m: TMethod;
+  ImageIndex: integer;
+begin
+  result:=0;
+  if lua_gettop(L)=2 then
+  begin
+    m.code:=lua_touserdata(L, lua_upvalueindex(1));
+    m.data:=lua_touserdata(L, lua_upvalueindex(2));
+    sender:=lua_ToCEUserData(L, 1);
+    TabIndex:=lua_tointeger(L,2);
+    ImageIndex:=-1;
+    TTabGetImageEvent(m)(sender, TabIndex, ImageIndex);
+    lua_pushinteger(L,ImageIndex);
+    result:=1;
+  end
+  else
+    lua_pop(L, lua_gettop(L));
+end;
+
 
 procedure registerLuaCall(typename: string; getmethodprop: lua_CFunction; setmethodprop: pointer; luafunctionheader: string);
 var t: TLuaCallData;
@@ -2692,6 +2738,7 @@ initialization
 
   registerLuaCall('TDBCustomDrawEvent', LuaCaller_DBCustomDrawEvent, pointer(TLuaCaller.DBCustomDrawEvent),'function %s(sender, rect, beforedraw)'#13#10#13#10'  return text'#13#10'end'#13#10);
   registerLuaCall('TContextPopupEvent', LuaCaller_ContextPopupEvent, pointer(TLuaCaller.ContextPopupEvent),'function %s(sender, mousepos)'#13#10'  local handled=true'#13#10'  return handled'#13#10'end'#13#10);
+  registerLuaCall('TTabGetImageEvent', LuaCaller_TabGetImageEvent, pointer(TLuaCaller.TabGetImageEvent),'function %s(sender, tabindex)'#13#10'  local imageindex=-1'#13#10'  return imageindex'#13#10'end'#13#10);
 
 end.
 

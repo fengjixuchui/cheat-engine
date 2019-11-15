@@ -1196,7 +1196,7 @@ var r: TMemoryRecord;
 begin
   AllowCollapse:=false;
   r:=TMemoryRecord(node.data);
-  if ((moHideChildren in r.options) and (not r.active)) or (moAllowManualCollapseAndExpand in r.options) then //if not active then allow collapse, or if it's allowed to collapse
+  if ((moHideChildren in r.options) and (not r.active)) or (moAllowManualCollapseAndExpand in r.options) or (moAlwaysHideChildren in r.options)  then //if not active then allow collapse, or if it's allowed to collapse
     AllowCollapse:=true;
 end;
 
@@ -1276,6 +1276,9 @@ var
   p: tpoint;
 begin
 //  self.Parent;
+
+
+
   p:=treeview.ScreenToClient(mouse.cursorpos);
   x:=p.x;
   y:=p.y;
@@ -1283,6 +1286,8 @@ begin
   node:=treeview.GetNodeAt(x,y);
   if node<>nil then
   begin
+    if button<>mbleft then exit;
+
     mr:=TMemoryRecord(node.data);
 
     textrect:=node.DisplayRect(true);

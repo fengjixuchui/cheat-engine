@@ -11,10 +11,10 @@ uses windows, dialogs,forms,classes,LCLIntf, LCLProc, sysutils,registry,ComCtrls
      memscan,plugin, hotkeyhandler,frmProcessWatcherunit, newkernelhandler,
      debuggertypedefinitions, commonTypeDefs;
 
-const ceversion=7.0;
+const ceversion=7.1;
 
 resourcestring
-  cename = 'Cheat Engine 7.0';
+  cename = 'Cheat Engine 7.1';
   rsPleaseWait = 'Please Wait!';
 
 procedure UpdateToolsMenu;
@@ -24,7 +24,7 @@ procedure initcetitle;
 
 
 
-const beta=''; //empty this for a release
+const beta=' alpha'; //empty this for a release
 
 var
   CEnorm:string;
@@ -427,16 +427,16 @@ begin
             checkkeycombo(temphotkeylist[i]);
           end;
 
-          if temphotkeylist[1][0]<>0 then
-            advancedoptions.pausehotkeystring:='('+ConvertKeyComboToString(temphotkeylist[1])+')'
+          if temphotkeylist[2][0]<>0 then
+            advancedoptions.pausehotkeystring:='('+ConvertKeyComboToString(temphotkeylist[2])+')'
           else
             advancedoptions.pausehotkeystring:=' ('+rsNoHotkey+')';
 
 
 
-          if temphotkeylist[2][0]<>0 then
+          if temphotkeylist[3][0]<>0 then
             mainform.cbSpeedhack.Hint:=rsEnableDisableSpeedhack+' ('+
-              ConvertKeyComboToString(temphotkeylist[2])+')'
+              ConvertKeyComboToString(temphotkeylist[3])+')'
           else
             mainform.cbSpeedhack.Hint:=rsEnableDisableSpeedhack+rsM2NoHotkey;
 

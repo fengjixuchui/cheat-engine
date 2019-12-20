@@ -267,10 +267,13 @@ var
   noautorun: boolean;
 begin
   Application.Title:='Cheat Engine 7.1';
-  Application.Initialize;
   {$ifdef darwin}
   macPortFixRegPath;
   {$endif}
+  outputdebugstring('start');
+
+  Application.Initialize;
+
 
   overridefont:=nil;
   noautorun:=false;
@@ -297,7 +300,12 @@ begin
   if not istrainer then
   begin
     //check the user preferences
+    {$ifdef darwin}
+    macPortFixRegPath;
+    {$endif}
+
     r := TRegistry.Create;
+
     r.RootKey := HKEY_CURRENT_USER;
     if r.OpenKey('\Software\Cheat Engine',false) then
     begin
@@ -361,6 +369,9 @@ begin
   handleparameters;
 
   OutputDebugString('Starting CE');
+
+
+
 
   Application.Run;
 end.

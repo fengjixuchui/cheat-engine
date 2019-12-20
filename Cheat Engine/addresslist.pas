@@ -10,7 +10,7 @@ interface
 
 uses
   LCLIntf, LCLType, Classes, SysUtils, controls, stdctrls, comctrls, ExtCtrls, graphics,
-  math, MemoryRecordUnit, FPCanvas, cefuncproc, newkernelhandler, menus,dom,
+  math, MemoryRecordUnit, FPCanvas, CEFuncProc, NewKernelHandler, menus,dom,
   XMLRead,XMLWrite, symbolhandler, AddresslistEditor, inputboxtopunit,
   frmMemrecComboboxUnit, commonTypeDefs, multilineinputqueryunit, LazUTF8;
 
@@ -198,8 +198,8 @@ type
 
 implementation
 
-uses dialogs, formAddressChangeUnit, TypePopup, PasteTableentryFRM, mainunit,
-  ProcessHandlerUnit, frmEditHistoryUnit, globals, filehandler;
+uses dialogs, formAddressChangeUnit, TypePopup, PasteTableentryFRM, MainUnit,
+  ProcessHandlerUnit, frmEditHistoryUnit, globals, Filehandler;
 
 resourcestring
   rsDoYouWantToDeleteTheSelectedAddress = 'Do you want to delete the selected address?';
@@ -246,9 +246,11 @@ end;
 procedure TAddresslist.clear;
 var
   i: integer;
-  item: TObject;
+  item: TMemoryRecord;
 begin
   //first check if it's being edited/or busy
+  if self=nil then exit;
+
   for i:=0 to count-1 do
     if (MemRecItems[i].isBeingEdited) or (memrecitems[i].AsyncProcessing) then exit;
 

@@ -118,7 +118,7 @@ uses mainunit, MainUnit2, LuaClass, frmluaengineunit, plugin, pluginexports,
   LuaCustomType, Filehandler, LuaSQL, frmSelectionlistunit, cpuidUnit, LuaRemoteThread,
   LuaManualModuleLoader, pointervaluelist, frmEditHistoryUnit, LuaCheckListBox,
   LuaDiagram, frmUltimap2Unit, frmcodefilterunit, BreakpointTypeDef, LuaSyntax,
-  LazLogger, LuaSynedit{$ifdef windows}, LuaRipRelativeScanner{$endif};
+  LazLogger, LuaSynedit, LuaRipRelativeScanner;
 
   {$warn 5044 off}
 
@@ -3253,9 +3253,13 @@ begin
 end;
 
 function lua_checkSynchronize(L: Plua_State): integer; cdecl;
+var timeout: integer=0;
 begin
   result:=0;
-  CheckSynchronize;
+  if lua_Gettop(L)>0 then
+    timeout:=lua_tointeger(L,1);
+
+  CheckSynchronize(timeout);
 end;
 
 function lua_queue(L: Plua_State): integer; cdecl;
@@ -12751,14 +12755,11 @@ begin
     initializeLuaPageControl;
 
     initializeLuaCalendar;
-    {$IFDEF windows}
     initializeLuaRipRelativeScanner;
-    {$ENDIF}
+
 
     initializeLuaStructureFrm;
-    {$IFDEF windows}
     initializeLuaInternet;
-    {$ENDIF}
     initializeLuaCustomType;
     initializeLuaSQL;
     {$IFDEF windows}

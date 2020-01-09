@@ -314,7 +314,6 @@ duplicateHandle(handle, Mode (0/1) ): If mode is 0 then it's the same as just du
 duplicateHandle(handle, fromPID, toPID): Copies the handle from the given process to the target process. 
 
 
-
 function onOpenProcess(processid):
   If this function is defined it will be called whenever cheat engine opens a process.
   Note: The the same process might be opened multiple times in a row internally
@@ -322,6 +321,10 @@ function onOpenProcess(processid):
 
 
 MainForm.OnProcessOpened: function(processid, processhandle, caption) - Define this if you want to be notified when a new process has been opened. Called only once from the main thread. It is recommended to use this instead of onOpenProcess
+
+function onTableLoad(before): If defined this function will be called twice when a table gets loaded. Once before the loading, and once after.
+
+
 
 getOpenedProcessID() : Returns the currently opened process. If none is open, returns 0
 getProcessIDFromProcessName(name) : returns a processid
@@ -2303,7 +2306,7 @@ createThreadSuspended(function(Thread,...), ...) :
 
 
 properties
-  name: string - This name will be shown when the thread terminated abnormally
+  Name: string - This name will be shown when the thread terminated abnormally
   Finished: boolean - Returns true if the thread has reached the end.  Do not rely on this if the thread is freeOnTerminate(true) (which is the default)
   Terminated: boolean - Returns true if the Terminate method has been called
 

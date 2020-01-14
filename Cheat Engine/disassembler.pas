@@ -93,6 +93,7 @@ type
     fsyntaxhighlighting: boolean;
     fOnDisassembleOverride: TDisassembleEvent;
     fOnPostDisassemble: TDisassembleEvent;
+    faggressivealignment: boolean;
 
 
     modrmposition: TMRPos;
@@ -174,6 +175,7 @@ type
     property syntaxhighlighting: boolean read fsyntaxhighlighting write setSyntaxHighlighting;
     property OnDisassembleOverride: TDisassembleEvent read fOnDisassembleOverride write fOnDisassembleOverride;
     property OnPostDisassemble: TDisassembleEvent read fOnPostDisassemble write fOnPostDisassemble;
+    property aggressivealignment: boolean read faggressivealignment write faggressivealignment;
   end;
 
 
@@ -1764,13 +1766,15 @@ begin
 
   if actualread>0 then
   begin
-    //I HATE THESE...   (I propably will not add them all, but I'll see how far I get)
-
     {$ifndef jni}
     if debuggerthread<>nil then
       for i:=0 to actualread-1 do
         if memory[i]=$cc then
-          memory[i]:=debuggerthread.getrealbyte(offset+i);
+        begin
+          //memory[i]:=debuggerthread.getrealbyte(offset+i);
+
+          repairbreakbyte(offset+i, memory[i]);
+        end;
     {$endif}
 
 
@@ -1866,10 +1870,7 @@ begin
 
     end;
 
-    {$ifdef windows}
-    if (memory[0]=$cc) then //if it's a int3 breakpoint and there is a debugger attached check if it's a bp
-      repairbreakbyte(startoffset, memory[0]);
-    {$endif}
+
 
 
     prefixsize:=length(LastDisassembleData.bytes);
@@ -1971,7 +1972,9 @@ begin
 
     case memory[0] of  //opcode
       $00 : begin
-              if (memory[1]=$55) and (memory[2]=$89) and (memory[3]=$e5) then
+
+
+              if (aggressivealignment and (((offset) and $f)=0) and (memory[1]<>0) ) or ((memory[1]=$55) and (memory[2]=$89) and (memory[3]=$e5)) then
               begin
                 description:='Filler';
                 lastdisassembledata.opcode:='db';
@@ -15423,9 +15426,13 @@ var
   found: boolean;
   i: ptrUint;
 
+  aggressive: boolean;
 begin
   if d=nil then
     d:=defaultDisassembler;
+
+  aggressive:=d.aggressivealignment;
+  d.aggressivealignment:=true;
 
   x:=previousOpcodeHelp(d, address,80, result);
   if x<>address then
@@ -15461,6 +15468,8 @@ begin
       end;
     end;
   end;
+
+  d.aggressivealignment:=aggressive;
 end;
 
 

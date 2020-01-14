@@ -332,11 +332,11 @@ type
     property Name: string read getName;
     property SavedState: ptruint read getSavedState write setSavedState; //hack to expose a raw pointer as property
     property SavedStateSize: integer read fsavedstatesize write fsavedstatesize;
-
   end;
 
   TfrmStructures2 = class(TForm)
     FindDialog1: TFindDialog;
+    miCollapseAll: TMenuItem;
     miOpenInNewWindow: TMenuItem;
     sdImageList: TImageList;
     miCommonalityScan: TMenuItem;
@@ -421,10 +421,12 @@ type
     SaveDialog1: TSaveDialog;
     saveValues: TSaveDialog;
     pnlGroups: TScrollBox;
+    sbSelection: TStatusBar;
     Structures1: TMenuItem;
     tmFixGui: TTimer;
     updatetimer: TTimer;
     tvStructureView: TTreeView;
+    procedure miCollapseAllClick(Sender: TObject);
     procedure miOpenInNewWindowClick(Sender: TObject);
     procedure miCommonalityScanClick(Sender: TObject);
     procedure MenuItem8Click(Sender: TObject);
@@ -493,6 +495,7 @@ type
     procedure tvStructureViewDblClick(Sender: TObject);
     procedure tvStructureViewMouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Integer);
+    procedure tvStructureViewSelectionChanged(Sender: TObject);
     procedure updatetimerTimer(Sender: TObject);
     procedure tvStructureViewCollapsed(Sender: TObject; Node: TTreeNode);
     procedure tvStructureViewCollapsing(Sender: TObject; Node: TTreeNode;
@@ -520,6 +523,9 @@ type
 
     frmStructuresNewStructure: TfrmStructuresNewStructure;
 
+    fOnStatusbarUpdate: TNotifyEvent;
+
+    procedure updateStatusbar;
     procedure UpdateCurrentStructOptions;
     procedure setupColors;
 
@@ -593,6 +599,7 @@ type
     property columns[index: integer]: TStructColumn read Getcolumn;
     property groupcount: integer read getGroupCount;
     property group[index: integer]: TStructGroup read getGroup;
+    property OnStatusbarUpdate: TNotifyEvent read fOnStatusbarUpdate write fOnStatusbarUpdate;
   end;
 
 var
@@ -613,7 +620,7 @@ implementation
 
 uses MainUnit, mainunit2, frmStructures2ElementInfoUnit, MemoryBrowserFormUnit,
   frmStructureLinkerUnit, frmgroupscanalgoritmgeneratorunit, frmStringPointerScanUnit,
-  ProcessHandlerUnit, Parsers, LuaCaller, frmRearrangeStructureListUnit, frmstructurecompareunit;
+  ProcessHandlerUnit, Parsers, LuaCaller, frmRearrangeStructureListUnit, frmstructurecompareunit, frmDebugSymbolStructureListUnit;
 
 resourcestring
   rsAddressValue = 'Address: Value';
@@ -2401,7 +2408,7 @@ begin
   focusedShape.visible:=state;
   fFocused:=state;
 
-
+  parent.parent.updateStatusbar;
 end;
 
 procedure TStructColumn.clearSavedState;
@@ -4568,8 +4575,8 @@ end;
 procedure TfrmStructures2.Structures1Click(Sender: TObject);
 begin
   //check if miDefineNewStructureFromDebugData should be visible
-  miDefineNewStructureFromDebugData.visible:={$ifdef windows}symhandler.hasDefinedStructures{$else}false{$endif};
-  miDefineNewStructureFromDebugData.enabled:=miDefineNewStructureFromDebugData.visible;
+  miDefineNewStructureFromDebugData.visible:={$ifdef windows}true{$else}false{$endif};
+  miDefineNewStructureFromDebugData.enabled:=symhandler.hasDefinedStructures;
   miSeperatorStructCommandsAndList.visible:=DissectedStructs.count>0;
 end;
 
@@ -4885,6 +4892,58 @@ begin
 
     end;
   end;
+end;
+
+procedure TfrmStructures2.tvStructureViewSelectionChanged(Sender: TObject);
+begin
+  updateStatusbar;
+end;
+
+procedure TfrmStructures2.updateStatusbar;
+var
+  i: integer;
+  node: TTreenode;
+  baseaddress, a: ptruint;
+  c: TStructColumn;
+
+  error: boolean;
+  offsetlist: toffsetlist;
+
+  s: string;
+begin
+  //update the statusbar
+  node:=tvStructureView.GetLastMultiSelected;
+  if node=nil then node:=tvStructureView.Selected;
+
+  if node=nil then
+  begin
+    sbSelection.SimpleText:='';
+  end
+  else
+  begin
+    c:=getFocusedColumn;
+    if c<>nil then
+    begin
+      setlength(offsetlist,0);
+      baseaddress:=c.Address;
+      getPointerFromNode(node, c, a, offsetlist);
+
+      s:=inttohex(baseaddress,8)+'+'+inttohex(a-baseaddress,1);
+      for i:=length(offsetlist)-1 downto 0 do
+        s:='['+s+']+'+inttohex(offsetlist[i],1);
+
+
+      a:=getAddressFromNode(node, c, error);
+
+      s:=s+'->'+inttohex(a,8);
+
+      sbSelection.SimpleText:=s;
+    end;
+  end;
+
+  if assigned(fOnStatusbarUpdate) then
+    fOnStatusbarUpdate(sbSelection);
+
 end;
 
 function TfrmStructures2.getFocusedColumn: TStructColumn;
@@ -5267,26 +5326,25 @@ var structlist, elementlist: Tstringlist;
 
   struct: TDissectedStruct;
   vtype:TVariableType;
+
+  structlistform: TfrmDebugSymbolStructureList;
 begin
   {$ifdef windows}
   //get the list of structures
+  structlistform:=nil;
   structlist:=tstringlist.create;
   elementlist:=tstringlist.create;
   try
-    symhandler.getStructureList(structlist,100);
-
-    if structlist.count>=100 then
-    begin
-      //show a dynamic list instead
-      exit;
-    end;
-
+    symhandler.getStructureList(structlist);
     if structlist.count=0 then exit;
 
-    i:=ShowSelectionList(self,'Structure list','Select a structure to load',structlist,selected);
-    if i=-1 then exit;
+    structlistform:=TfrmDebugSymbolStructureList.Create(self);
+    structlistform.list:=structlist;
+    if structlistform.showmodal<>mrok then exit;
 
-    s:=TDBStructInfo(structlist.objects[i]);
+
+    s:=structlistform.selected;
+    selected:=structlistform.selectedtext;
 
     symhandler.getStructureElements(s.callbackid, s.moduleid, s.typeid, elementlist);
 
@@ -5313,6 +5371,9 @@ begin
     //showmessage('not yet implemented. come back later');
 
   finally
+    if structlistform<>nil then
+      freeandnil(structlistform);
+
     for i:=0 to structlist.count-1 do
       if structlist.Objects[i]<>nil then
          structlist.Objects[i].Free;
@@ -6008,6 +6069,11 @@ begin
   slist.free;
 
 
+end;
+
+procedure TfrmStructures2.miCollapseAllClick(Sender: TObject);
+begin
+  tvStructureView.FullCollapse;
 end;
 
 

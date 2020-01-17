@@ -12,15 +12,21 @@ uses unixporthelper, Classes, sysutils, NewKernelHandler, syncobjs, SymbolListHa
 uses
   {$ifdef darwin}
   macport, coresymbolication,
-  {$else}
+  {$endif}
+
+  {$ifdef windows}
   jwawindows, windows,
   {$endif}
   classes,LCLIntf{$ifdef windows},imagehlp{$endif},sysutils, CEFuncProc,
   NewKernelHandler,syncobjs, SymbolListHandler, fgl, typinfo, cvconst, PEInfoFunctions,
   DotNetPipe, DotNetTypes, commonTypeDefs, math, LazUTF8, contnrs, LazFileUtils,
   db, sqldb, sqlite3dyn, sqlite3conn, registry, symbolhandlerstructs, forms, controls,
-  AvgLvlTree;
+  AvgLvlTree
+  {$ifdef darwin}
+  ,macportdefines
+  {$endif};
 {$endif}
+
 
 {$ifdef windows}
 Procedure Free (P : pointer); cdecl; external 'msvcrt' name 'free';
@@ -574,6 +580,7 @@ begin
         //spawn a TfrmSymboleventtakinglong form that uses a timer to check the TSymbolLoaderThreadEvent event
 
         waitingfrm:=TfrmSymbolEventTakingLong.Create(application);
+        waitingfrm.slevent:=self;
 
         if self is  TGetAddressFromSymbolThreadEvent then
         begin
@@ -609,6 +616,10 @@ begin
             abandoned:=true;
           end;
           break;
+        end
+        else
+        asm
+        nop
         end;
       end;
     end;
@@ -1942,6 +1953,7 @@ end;
 
 
 {$ifdef darwin}
+var count: integer;
 
 function ES(si: CSSymbolIterator; sym: CSSymbolRef): integer;  cdecl;
 var
@@ -1961,6 +1973,9 @@ begin
   self.symbollist.AddSymbol(self.currentModuleName, self.currentModuleName+'.'+symname, range.location, range.length);
   self.symbollist.AddSymbol(self.currentModuleName, symname, range.location, range.length,true); //don't add it as a address->string lookup  , (this way it always shows modulename.symbol)
   result:=0;
+
+  self.processThreadEvents;
+
 end;
 
 function EM(mi: CSSymbolOwnerIterator; so: CSSymbolOwnerRef): integer;  cdecl;
@@ -1975,7 +1990,7 @@ begin
   CSSymbolOwnerforEachSymbol(so, si);
   freeIterator(si);
 
-  //todo: processThreadEvents
+  self.processThreadEvents;
 
   result:=0;
 end;
@@ -1985,6 +2000,8 @@ var mi: CSSymbolOwnerIterator;
 begin
   result:=false;
   cs:=CSSymbolicatorCreateWithPid(thisprocessid);
+
+  processThreadEvents;
 
   if CSIsNull(cs)=false then
   begin
@@ -2250,8 +2267,11 @@ begin
 
 
 
-              processThreadEvents;
               isloading:=false;
+
+              while symbolloaderthreadeventqueue.Count>0 do
+                processThreadEvents;
+
 
               debugpart:=4;
               EnumerateExtendedDebugSymbols;
@@ -2286,6 +2306,10 @@ begin
 
         symbolscleaned:=true;
         isloading:=false;
+
+        while symbolloaderthreadeventqueue.Count>0 do
+          processThreadEvents;
+
         DLLSymbolsLoaded:=true;
         apisymbolsloaded:=true;
         dotnetsymbolsloaded:=true;
@@ -4679,6 +4703,10 @@ begin
 
                 if not processhandler.isNetwork then
                 begin
+                  {$ifdef darwin}
+                  newmodulelist[newmodulelistpos].is64bitmodule:=me32.is64bit; //I own this struct now so yes...
+                  {$endif}
+
                   {$ifdef windows}
                   if peinfo_is64bitfile(x, newmodulelist[newmodulelistpos].is64bitmodule)=false then
                   begin

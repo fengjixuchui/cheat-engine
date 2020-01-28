@@ -8,7 +8,7 @@ uses
   {$ifdef darwin}
     LResources, LCLIntf, LCLProc, MacOSAll,MacOSXPosix, LMessages, Classes, Forms, Controls, Messages,
   ComCtrls, stdctrls,sysutils, graphics,menus, dialogs, extctrls, math, buttons,
-  ImgList, ActnList, registry, Clipbrd, CEFuncProc, NewKernelHandler, Assemblerunit,
+  ImgList, ActnList, registry, Clipbrd, NewKernelHandler, Assemblerunit,
   symbolhandler,autoassembler, addresslist, CustomTypeHandler, MemoryRecordUnit,memscan,
   SaveFirstScan, foundlisthelper, disassembler, tablist, simpleaobscanner,frmSelectionlistunit,
   lua, LuaHandler, lauxlib, lualib,CEDebugger,debughelper ,speedhack2, groupscancommandparser,
@@ -40,7 +40,7 @@ uses
   groupscancommandparser, GraphType, IntfGraphics, RemoteMemoryManager,
   DBK64SecondaryLoader, savedscanhandler, debuggertypedefinitions, networkInterface,
   FrmMemoryRecordDropdownSettingsUnit, xmlutils, zstream, zstreamext, commonTypeDefs,
-  VirtualQueryExCache, LazLogger, LazUTF8, LCLVersion, strutils;
+  VirtualQueryExCache, LazLogger, LazUTF8, LCLVersion;
   {$endif}
 //the following are just for compatibility
 
@@ -1053,7 +1053,7 @@ uses cefuncproc, MainUnit2, ProcessWindowUnit, MemoryBrowserFormUnit, TypePopup,
   PointerscanresultReader, Parsers, Globals {$ifdef windows},GnuAssembler, xinput{$endif} ,DPIHelper,
   multilineinputqueryunit {$ifdef windows},winsapi{$endif} ,LuaClass, Filehandler{$ifdef windows}, feces{$endif}
   {$ifdef windows},frmDBVMWatchConfigUnit, frmDotNetObjectListUnit{$endif} ,ceregistry ,UnexpectedExceptionsHelper
-  ,frmFoundlistPreferencesUnit, fontSaveLoadRegistry{$ifdef windows}, cheatecoins{$endif};
+  ,frmFoundlistPreferencesUnit, fontSaveLoadRegistry{$ifdef windows}, cheatecoins{$endif},strutils;
 
 resourcestring
   rsInvalidStartAddress = 'Invalid start address: %s';
@@ -2959,7 +2959,7 @@ begin
 
   if not autoattachopen then
   begin
-    if (addresslist.Count > 0) or (advancedoptions.codelist2.items.Count > 0) then
+    if (addresslist.Count > 0) or (AdvancedOptions.count > 0) then
     begin
       if (messagedlg(strKeepList, mtConfirmation, [mbYes, mbNo], 0) = mrNo) then
       begin
@@ -2982,8 +2982,8 @@ begin
 
         if not wasActive then
         begin
-          for i := 0 to length(AdvancedOptions.code) - 1 do
-            if AdvancedOptions.code[i].changed then
+          for i := 0 to AdvancedOptions.count - 1 do
+            if (AdvancedOptions.code[i]<>nil) and AdvancedOptions.code[i].changed then
             begin
               wasActive := True;
               break;
@@ -2997,8 +2997,8 @@ begin
           begin
             addresslist.disableAllWithoutExecute;
 
-            for i := 0 to length(AdvancedOptions.code) - 1 do
-              AdvancedOptions.code[i].changed := False;
+            for i := 0 to AdvancedOptions.count - 1 do
+              if (AdvancedOptions.code[i]<>nil) then AdvancedOptions.code[i].changed := False;
           end;
 
         end;
@@ -3010,8 +3010,8 @@ begin
   begin
     cbSpeedhack.Checked:=false;
     addresslist.disableAllWithoutExecute;
-    for i := 0 to length(AdvancedOptions.code) - 1 do
-      AdvancedOptions.code[i].changed := False;
+    for i := 0 to AdvancedOptions.count - 1 do
+      if AdvancedOptions.code[i]<>nil then AdvancedOptions.code[i].changed := False;
   end;
 
   enablegui(btnNextScan.Enabled);
@@ -3298,20 +3298,15 @@ end;
 procedure TMainForm.Copyselectedaddresses1Click(Sender: TObject);
 var
   i: ptruint;
-  address: string;
-  delimiters: tsyscharset;
+  address: ptruint;
   temp: string;
 begin
   temp:='';
-  delimiters:=[];
-
-  Include(delimiters, ':');
 
   if foundlist3.SelCount = 1 then
     begin
-      address := foundlist3.Items[foundlist3.itemindex].Caption;
-      address := ExtractDelimited(1,address,delimiters);
-      clipboard.AsText := symhandler.getNameFromAddress(StrToQWordEx('$'+address))
+      address := foundlist.GetAddress(foundlist3.itemIndex);
+      clipboard.AsText := symhandler.getNameFromAddress(address)
     end
   else
   if foundlist3.SelCount > 1 then
@@ -3320,9 +3315,8 @@ begin
     begin
       if foundlist3.items[i].Selected then
       begin
-        address := foundlist3.Items[i].Caption;
-        address := ExtractDelimited(1,address,delimiters);
-        temp := temp + symhandler.getNameFromAddress(StrToQWordEx('$'+address)) + sLineBreak;
+        address := foundlist.GetAddress(i);
+        temp := temp + symhandler.getNameFromAddress(address) + sLineBreak;
       end
     end;
     clipboard.AsText := temp;
@@ -6453,7 +6447,7 @@ begin
         if rbdec.Checked then
           Result := IntToStr(oldvaluei)
         else
-          Result := IntToBin(oldvaluei);
+          Result := parsers.IntToBin(oldvaluei);
 
       end;
 
@@ -8273,7 +8267,7 @@ begin
       if scanvalue.Text = '' then
         scanvalue.Text := '0'
       else
-        scanvalue.Text := inttobin(StrToQWordEx(scanvalue.Text));
+        scanvalue.Text := parsers.inttobin(StrToQWordEx(scanvalue.Text));
       if scanvalue.Text = '' then
         scanvalue.Text := '0';
     except
@@ -8636,7 +8630,7 @@ begin
       raise Exception.Create(strUnknownExtension);
 
 
-    if ((addresslist.Count > 0) or (advancedoptions.numberofcodes > 0) or (DissectedStructs.count>0) ) and
+    if ((addresslist.Count > 0) or (advancedoptions.count > 0) or (DissectedStructs.count>0) ) and
       (Extension <> '.EXE') then
     begin
       app := messagedlg(rsDoYouWishToMergeTheCurrentTableWithThisTable,
@@ -8662,7 +8656,7 @@ begin
   end
   else Opendialog1.FileName:=oldFileName;
 
-  if (advancedoptions <> nil) and (advancedoptions.codelist2.items.Count>0) then
+  if (advancedoptions <> nil) and (advancedoptions.count>0) then
     advancedoptions.Show;
 end;
 
@@ -10342,9 +10336,7 @@ Will remove all entries from the cheattable, comments, and advanced options wind
 begin
   Comments.Memo1.Clear;
   comments.Memo1.Lines.Add(strInfoAboutTable);
-  advancedoptions.codelist2.items.Clear;
-  advancedoptions.numberofcodes := 0;
-
+  advancedoptions.clear;
   addresslist.Clear;
 end;
 

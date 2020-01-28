@@ -118,7 +118,7 @@ uses autoassembler, mainunit, MainUnit2, LuaClass, frmluaengineunit, plugin, plu
   LuaCustomType, Filehandler, LuaSQL, frmSelectionlistunit, cpuidUnit, LuaRemoteThread,
   LuaManualModuleLoader, pointervaluelist, frmEditHistoryUnit, LuaCheckListBox,
   LuaDiagram, frmUltimap2Unit, frmcodefilterunit, BreakpointTypeDef, LuaSyntax,
-  LazLogger, LuaSynedit, LuaRipRelativeScanner;
+  LazLogger, LuaSynedit, LuaRipRelativeScanner, ColorBox;
 
   {$warn 5044 off}
 
@@ -3613,19 +3613,6 @@ begin
     result:=1;
   end else lua_pop(L, lua_gettop(L));
 end;
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 function messageDialog(L: PLua_State): integer; cdecl;
 var
@@ -10390,6 +10377,7 @@ var
   routine: string;
   lc: tluacaller;
   name: string;
+  shortcut: TShortCut;
 begin
   result:=0;
 
@@ -10414,7 +10402,17 @@ begin
     end
     else exit;
 
-    lua_pushinteger(L, registerAutoAssemblerTemplate(name, lc.AutoAssemblerTemplateCallback));
+    shortcut:=0;
+    if lua_gettop(L)>=3 then
+    begin
+      if lua_isinteger(L,3) then
+        shortcut:=lua_tointeger(L,3)
+      else
+      if lua_isstring(L,3) then
+        shortcut:=textToShortCut(Lua_ToString(L,3))
+    end;
+
+    lua_pushinteger(L, registerAutoAssemblerTemplate(name, lc.AutoAssemblerTemplateCallback, shortcut));
     result:=1;
   end;
 end;
@@ -12087,6 +12085,53 @@ begin
   result:=1;
 end;
 
+function lua_createColorDialog(L: Plua_State): integer; cdecl;
+var
+  owner: TComponent;
+  cd: TColorDialog;
+begin
+  result:=0;
+
+  if lua_gettop(L)=1 then
+    owner:=lua_toceuserdata(L, 1)
+  else
+    owner:=nil;
+
+  cd:=TColorDialog.Create(owner);
+  luaclass_newClass(L, cd);
+  result:=1;
+end;
+
+function lua_createColorBox(L: Plua_State): integer; cdecl;
+var
+  owner: TComponent;
+  cb: TColorBox;
+begin
+  result:=0;
+
+  if lua_gettop(L)=1 then
+    owner:=lua_toceuserdata(L, 1)
+  else
+    owner:=nil;
+
+  cb:=TColorBox.Create(owner);
+  luaclass_newClass(L, cb);
+  result:=1;
+end;
+
+function lua_createAutoAssemblerForm(L: Plua_State): integer; cdecl;
+var f: TfrmAutoInject;
+begin
+  f:=TfrmAutoInject.Create(application);
+  if lua_gettop(L)>=1 then
+    f.assemblescreen.Text:=Lua_ToString(L,1);
+
+  f.show;
+
+  luaclass_newClass(L, f);
+  result:=1;
+end;
+
 procedure InitializeLua;
 var
   s: tstringlist;
@@ -12729,6 +12774,10 @@ begin
     lua_register(L, 'duplicateHandle', lua_duplicateHandle);
 
     lua_register(L, 'getOperatingSystem', lua_getOperatingSystem);
+    lua_register(L, 'createColorDialog', lua_createColorDialog);
+    lua_register(L, 'createColorBox', lua_createColorBox);
+    lua_register(L, 'createAutoAssemblerForm', lua_createAutoAssemblerForm);
+
 
 
     initializeLuaRemoteThread;

@@ -15,7 +15,7 @@ uses
   Controls, Forms, Dialogs, frmMemoryAllocHandlerUnit, math, StdCtrls, Spin,
   ExtCtrls,CEFuncProc,symbolhandler,Clipbrd, Menus,plugin,CEDebugger,KernelDebugger,
   Assemblerunit,disassembler,addressparser, Buttons, Contnrs,
-  disassemblerviewunit, peinfofunctions ,dissectcodethread,stacktrace2,
+  disassemblerviewunit, PEInfoFunctions ,DissectCodeThread,stacktrace2,
   NewKernelHandler, ComCtrls, LResources, byteinterpreter, StrUtils, hexviewunit,
   debughelper, debuggertypedefinitions,frmMemviewPreferencesUnit, registry,
   ScrollBoxEx, disassemblerComments, multilineinputqueryunit, frmMemoryViewExUnit,
@@ -2611,26 +2611,30 @@ var codelength: dword;
 begin
   a:=disassemblerview.SelectedAddress;
 
-  for i:=0 to AdvancedOptions.numberofcodes-1 do
+  for i:=0 to AdvancedOptions.count-1 do
   begin
-    a2:=symhandler.getAddressFromName(AdvancedOptions.code[i].symbolname,false,e);
-    if not e then
+    if AdvancedOptions.code[i]<>nil then
     begin
-      if InRangeX(disassemblerview.SelectedAddress, a2, a2+length(AdvancedOptions.code[i].actualopcode)-1 ) then
+      a2:=symhandler.getAddressFromName(AdvancedOptions.code[i].symbolname,false,e);
+      if not e then
       begin
-        for j:=0 to AdvancedOptions.Codelist2.Items.count-1 do
-          AdvancedOptions.Codelist2.Items[j].Selected:=false;
+        if InRangeX(disassemblerview.SelectedAddress, a2, a2+length(AdvancedOptions.code[i].actualopcode)-1 ) then
+        begin
+          for j:=0 to AdvancedOptions.count-1 do
+            AdvancedOptions.Selected[j]:=false;
 
-        AdvancedOptions.Codelist2.Items[i].Selected:=true;
-        AdvancedOptions.Codelist2.ItemIndex:=i;
+          AdvancedOptions.Selected[i]:=true;
+          AdvancedOptions.lvCodelist.ItemIndex:=i;
 
-        if AdvancedOptions.code[i].changed then
-          AdvancedOptions.miRestoreWithOriginal.OnClick(AdvancedOptions.miRestoreWithOriginal)
-        else
-          AdvancedOptions.miReplaceWithNops.onclick(AdvancedOptions.miReplaceWithNops);
+          if AdvancedOptions.code[i].changed then
+            AdvancedOptions.miRestoreWithOriginal.OnClick(AdvancedOptions.miRestoreWithOriginal)
+          else
+            AdvancedOptions.miReplaceWithNops.onclick(AdvancedOptions.miReplaceWithNops);
 
-        exit;
+          exit;
+        end;
       end;
+
     end;
   end;
 
@@ -4016,6 +4020,7 @@ var x: ptrUint;
   b: byte;
   dbvmbp: boolean;
 begin
+
   Breakandtraceinstructions1.Enabled:=processhandle<>0;
   miTogglebreakpoint.Enabled:=processhandle<>0;
   Changestateofregisteratthislocation1.Enabled:=processhandle<>0;
@@ -4084,27 +4089,30 @@ begin
 
   inadvancedoptions:=false;
 
-  for i:=0 to AdvancedOptions.numberofcodes-1 do
+  for i:=0 to AdvancedOptions.count-1 do
   begin
-    a:=symhandler.getAddressFromName(AdvancedOptions.code[i].symbolname,false,e);
-    if not e then
+    if AdvancedOptions.code[i]<>nil then
     begin
-      if InRangeX(disassemblerview.SelectedAddress, a, a+length(AdvancedOptions.code[i].actualopcode)-1 ) then
+      a:=symhandler.getAddressFromName(AdvancedOptions.code[i].symbolname,false,e);
+      if not e then
       begin
-        inadvancedoptions:=true;
+        if InRangeX(disassemblerview.SelectedAddress, a, a+length(AdvancedOptions.code[i].actualopcode)-1 ) then
+        begin
+          inadvancedoptions:=true;
 
-        if AdvancedOptions.code[i].changed then
-          begin
-            miReplacewithnops.caption:=rsRestoreWithOrginalCode;
-            miReplacewithnops.imageindex:=44;
-          end
-        else
-          begin
-            miReplacewithnops.caption:=rsReplaceWithCodeThatDoesNothing;
-            miReplacewithnops.imageindex:=42;
-          end;
+          if AdvancedOptions.code[i].changed then
+            begin
+              miReplacewithnops.caption:=rsRestoreWithOrginalCode;
+              miReplacewithnops.imageindex:=44;
+            end
+          else
+            begin
+              miReplacewithnops.caption:=rsReplaceWithCodeThatDoesNothing;
+              miReplacewithnops.imageindex:=42;
+            end;
 
-        break;
+          break;
+        end;
       end;
     end;
   end;

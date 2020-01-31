@@ -33,10 +33,6 @@ namespace CESDK
 
         private CESDK sdk;
 
-        [ThreadStatic]
-        private IntPtr lua_State; //unique per thread
-
-
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         public delegate int LuaCall(IntPtr lua_State);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -95,10 +91,19 @@ namespace CESDK
         private delegate int dlua_tointegerx(IntPtr state, int idx, [MarshalAs(UnmanagedType.I4)] ref int isnum);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate bool dlua_toboolean(IntPtr state, int idx);
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)][return: MarshalAs(UnmanagedType.LPStr)]
-        private delegate string dlua_tolstring(IntPtr state, int idx, int count);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate IntPtr dlua_tolstring(IntPtr state, int idx, IntPtr sizeptr); 
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)][return: MarshalAs(UnmanagedType.SysInt)]
+        private delegate IntPtr dlua_touserdata(IntPtr state, int idx);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate int dlua_rawlen(IntPtr state, int idx);
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate int dlua_gettable(IntPtr state, int idx);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate int dlua_settable(IntPtr state, int idx);
+
+
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate int dlua_callk(IntPtr state, int nargs, int nresults, IntPtr context, IntPtr k);
@@ -118,10 +123,15 @@ namespace CESDK
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
         private delegate IntPtr dLuaRegister(IntPtr state, [MarshalAs(UnmanagedType.LPStr)]string s, LuaCall func);
 
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        private delegate void dLuaPushClassInstance(IntPtr state, IntPtr instance);
+        
+
 
         //lua related sdk exports:
         private dGetLuaState _GetLuaState;
         private dLuaRegister LuaRegister;
+        private dLuaPushClassInstance LuaPushClassInstance;
 
 
         //local native lua functions
@@ -149,7 +159,10 @@ namespace CESDK
         private dlua_tointegerx lua_tointegerx;
         private dlua_toboolean lua_toboolean;
         private dlua_tolstring lua_tolstring;
+        private dlua_touserdata lua_touserdata;
         private dlua_rawlen lua_rawlen;
+        private dlua_gettable lua_gettable;
+        private dlua_settable lua_settable;
         private dlua_callk lua_callk;
         private dlua_pcallk lua_pcallk;
 
@@ -187,7 +200,10 @@ namespace CESDK
         public int Type(IntPtr L, int idx) { return lua_type(L, idx); }
 
 
-        public int PushClosure(LuaCall func, int n) { return lua_pushcclosure(State, func, n); }
+        public int PushClosure(LuaCall func, int n)
+        {
+            return lua_pushcclosure(State, func, n);
+        }
         public int PushFunction(LuaCall func) { return PushClosure(func, 0); }
         public int SetGlobal(string str) { return lua_setglobal(State, str); }
         public int GetGlobal(string str) { return lua_getglobal(State, str); }
@@ -201,10 +217,11 @@ namespace CESDK
         {
             LuaCall z = delegate (IntPtr x) {
                 int r;
-                IntPtr bla = lua_State;
-                lua_State = x;
+
+                IntPtr oldOverride = lua_StateOverride;
+                lua_StateOverride = x;
                 r = func();
-                lua_State = bla;
+                lua_StateOverride = oldOverride;
                 return r;
             };
 
@@ -214,8 +231,17 @@ namespace CESDK
 
         public void Register(string FuncName, LuaCall func)
         {
-            luafunctions.Add(func); //prevent it from getting garbage collected
-            LuaRegister(State, FuncName, func);            
+            LuaCall z = delegate (IntPtr x)
+             {
+                 int r;
+                 IntPtr oldOverride = lua_StateOverride;
+                 lua_StateOverride = x;
+                 r = func(x);
+                 lua_StateOverride = oldOverride;
+                 return r;
+             };
+            luafunctions.Add(z); //prevent it from getting garbage collected
+            LuaRegister(State, FuncName, z);            
         }
 
         public void PushInteger(Int64 i) { lua_pushinteger(State, i); }
@@ -232,6 +258,10 @@ namespace CESDK
 
         public void PushBoolean(bool b) { lua_pushboolean(State, b); }
         public void PushBoolean(IntPtr L, bool b) { lua_pushboolean(L, b); }
+
+        public void PushCEObject(IntPtr L, IntPtr ceobject) { LuaPushClassInstance(L, ceobject); }
+        public void PushCEObject(IntPtr ceobject) { LuaPushClassInstance(State, ceobject); }
+
 
         public Boolean IsFunction(IntPtr L, int idx) { return lua_type(L, idx) == LUA_TFUNCTION; }
         public Boolean IsFunction(int idx) { return lua_type(State, idx) == LUA_TFUNCTION; }
@@ -262,6 +292,11 @@ namespace CESDK
         public Boolean IsCFunction(int idx) { return lua_iscfunction(State, idx); }
         public Boolean IsUserData(IntPtr L, int idx) { return lua_isuserdata(L, idx); }
         public Boolean IsUserData(int idx) { return lua_isuserdata(State, idx); }
+        public Boolean IsCEObject(IntPtr L, int idx) { return IsHeavyUserdata(L, idx); }
+        public Boolean IsCEObject(int idx) { return IsHeavyUserdata(State, idx); }
+        
+
+
         public double ToNumber(IntPtr L, int idx) { int isnumber = 0; return lua_tonumberx(L, idx, ref isnumber); }
         public double ToNumber(int idx) { return ToNumber(State, idx); }
         public int ToInteger(IntPtr L, int idx) {
@@ -282,21 +317,45 @@ namespace CESDK
         public bool ToBoolean(IntPtr L, int idx) { return lua_toboolean(L, idx); }
         public bool ToBoolean(int idx) { return lua_toboolean(State, idx); }
 
-        public string ToLString(IntPtr L, int idx, int count) { return lua_tolstring(L, idx, count); }
-        public string ToLString(int idx, int count) { return ToLString(State, idx, count); }
+        public string ToLString(IntPtr L, int idx, ref IntPtr count)
+        {
+            IntPtr ps=lua_tolstring(L, idx, IntPtr.Zero);
+            string s=Marshal.PtrToStringAnsi(ps);
+            return s;
+        }
+        public string ToLString(int idx, ref IntPtr count) { return ToLString(State, idx, ref count); }
+
+        public IntPtr ToCEObject(IntPtr L, int idx)
+        {
+            IntPtr p = lua_touserdata(L, idx);
+            p=Marshal.ReadIntPtr(p);           
+
+            return p;            
+        }
+        public IntPtr ToCEObject(int idx) { return ToCEObject(State, idx); }
 
         public int ObjLen(IntPtr L, int idx) { return lua_rawlen(L, idx); }
         public int ObjLen(int idx) { return lua_rawlen(State, idx); }
+        public int GetTable(IntPtr L, int idx) { return lua_gettable(L, idx); }
+        public int GetTable(int idx) { return lua_gettable(State, idx); }
+        public int SetTable(IntPtr L, int idx) { return lua_settable(L, idx); }
+        public int SetTable(int idx) { return lua_settable(State, idx); }
 
         public string ToString(IntPtr L, int idx)
         {
-            int len = ObjLen(L, idx);
-            return ToLString(L, idx, len);
+            IntPtr len = (IntPtr)ObjLen(L, idx);
+            return ToLString(L, idx, ref len);
         }
-        public string ToString(int idx, int count) { return ToString(State, idx); }
+        public string ToString(int idx) { return ToString(State, idx); }
 
-        public int PCall(IntPtr L, int nargs, int nresults) { return lua_pcallk(L, nargs, nresults, IntPtr.Zero, IntPtr.Zero); }
-        public int PCall(int nargs, int nresults) { return lua_pcallk(State, nargs, nresults, IntPtr.Zero, IntPtr.Zero); }
+        public int PCall(IntPtr L, int nargs, int nresults) {
+            int pcr=lua_pcallk(L, nargs, nresults, IntPtr.Zero, IntPtr.Zero);
+            if (pcr!=0)
+                throw new System.ApplicationException("PCall failed with error " + pcr.ToString() + " (" + ToString(-1) + ")");
+
+            return pcr;
+        }
+        public int PCall(int nargs, int nresults) { return PCall(State, nargs, nresults); }
 
         
         public int Call(IntPtr L, int nargs, int nresults) { return lua_callk(L, nargs, nresults, IntPtr.Zero, IntPtr.Zero); }
@@ -311,16 +370,26 @@ namespace CESDK
             return PCall(0, -1);
         }
 
+        [ThreadStatic]
+        static IntPtr lua_StateOverride = (IntPtr)0;
+
         private IntPtr GetLuaState()
         {
+            if (lua_StateOverride != IntPtr.Zero)
+                return lua_StateOverride;
+
+            if (_GetLuaState == null)
+                _GetLuaState = Marshal.GetDelegateForFunctionPointer<dGetLuaState>(sdk.pluginexports.GetLuaState);
+
+            /*
             if (lua_State==(IntPtr)0)
             {
-                if (_GetLuaState == null)
-                    _GetLuaState = Marshal.GetDelegateForFunctionPointer<dGetLuaState>(sdk.pluginexports.GetLuaState);
+
 
                 lua_State = _GetLuaState();
             }           
-            return lua_State;
+            */
+            return _GetLuaState(); 
         }
 
         public CESDKLua(CESDK sdk)
@@ -348,6 +417,7 @@ namespace CESDK
                 lua_pushlstring = Marshal.GetDelegateForFunctionPointer<dlua_pushlstring>(GetProcAddress(hLibLua, "lua_pushlstring"));
                 lua_pushstring = Marshal.GetDelegateForFunctionPointer<dlua_pushstring>(GetProcAddress(hLibLua, "lua_pushstring"));
                 lua_pushboolean = Marshal.GetDelegateForFunctionPointer<dlua_pushboolean>(GetProcAddress(hLibLua, "lua_pushboolean"));
+                
 
                 lua_type = Marshal.GetDelegateForFunctionPointer<dlua_type>(GetProcAddress(hLibLua, "lua_type"));
                 
@@ -362,7 +432,13 @@ namespace CESDK
 
                 lua_toboolean = Marshal.GetDelegateForFunctionPointer<dlua_toboolean>(GetProcAddress(hLibLua, "lua_toboolean"));
                 lua_tolstring = Marshal.GetDelegateForFunctionPointer<dlua_tolstring>(GetProcAddress(hLibLua, "lua_tolstring"));
+                lua_touserdata = Marshal.GetDelegateForFunctionPointer<dlua_touserdata>(GetProcAddress(hLibLua, "lua_touserdata"));
+
                 lua_rawlen = Marshal.GetDelegateForFunctionPointer<dlua_rawlen>(GetProcAddress(hLibLua, "lua_rawlen"));
+
+                lua_gettable = Marshal.GetDelegateForFunctionPointer<dlua_gettable>(GetProcAddress(hLibLua, "lua_gettable"));
+                lua_settable = Marshal.GetDelegateForFunctionPointer<dlua_settable>(GetProcAddress(hLibLua, "lua_settable"));
+
 
 
                 lua_callk = Marshal.GetDelegateForFunctionPointer<dlua_callk>(GetProcAddress(hLibLua, "lua_callk"));
@@ -372,6 +448,8 @@ namespace CESDK
             }
 
             LuaRegister = Marshal.GetDelegateForFunctionPointer<dLuaRegister>(sdk.pluginexports.LuaRegister);
+
+            LuaPushClassInstance = Marshal.GetDelegateForFunctionPointer<dLuaPushClassInstance>(sdk.pluginexports.LuaPushClassInstance);
 
 
 

@@ -929,6 +929,11 @@ end
 
 function mono_class_getVTable(domain, klass)
   --if debug_canBreak() then return nil end
+  if monopipe.IL2CPP then
+    return klass
+  end
+  
+  
   local result=0
   monopipe.lock()
   monopipe.writeByte(MONOCMD_GETVTABLEFROMCLASS)
@@ -2363,15 +2368,16 @@ function monoform_createInstanceOfClass(sender)
   if (node~=nil) then    
     if (node.Data~=nil) and (node.Level==2) then     
       local r=mono_object_new(node.data)
-      print(string.format("mono_object_new returned %x",r))
-      if r and (r~=0) then
-        r=mono_object_init(r);
-        if r then
-          print(string.format("mono_object_init returned success"))
-        else
-          print(string.format("mono_object_init returned false"))
+      if r then
+        print(string.format("mono_object_new returned %x",r))
+        if r and (r~=0) then
+          r=mono_object_init(r);
+          if r then
+            print(string.format("mono_object_init returned success"))
+          else
+            print(string.format("mono_object_init returned false"))
+          end        
         end
-        
       end
       
     end  
@@ -2588,17 +2594,31 @@ function monoform_EnumImages(node)
   local i
 
   local assemblies=mono_enumAssemblies()
+  local images={}
+  
   mono_enumImages(
     function(image)
       local imagename=mono_image_get_name(image)
       
       if imagename then       
-        local n=node.add(string.format("%x : %s", image, imagename))      
-        n.HasChildren=true
-        n.Data=image
+        local e={}
+        e.image=image
+        e.imagename=imagename  
+
+        table.insert(images,e)        
       end
     end
   )
+  
+  table.sort(images,function(e1,e2)
+    return e1.imagename < e2.imagename
+  end)
+  
+  for i=1,#images do    
+    local n=node.add(string.format("%x : %s", images[i].image, images[i].imagename))          n.HasChildren=true
+    n.Data=images[i].image
+    n.HasChildren=true
+  end
 end
 
 function monoform_AddClass(node, klass, namespace, classname, fqname)
@@ -3651,6 +3671,8 @@ function monoAA_GETMONOSTATICDATA(assemblyname, namespace, classname, symbolpref
   --            symbolprefix = name of symbol prefix (sanitized classname used if nil)
 
   -- returns AA script for locating static data location for given structure
+  if monopipe.il2cpp then return end
+  
   local SYMCLASSNAME
   if assemblyname==nil or namespace==nil or classname==nil then
     return ''
@@ -3859,6 +3881,8 @@ function monoAA_GETMONOSTATICFIELDDATA(assemblyname, namespace, classname, field
   --            symbolprefix = name of symbol prefix (sanitized classname used if nil)
 
   -- returns AA script for locating static data location for given structure
+  if monopipe.il2cpp then return end  
+  
   local SYMCLASSNAME
   if assemblyname==nil or namespace==nil or classname==nil or fieldname==nil then
     return ''

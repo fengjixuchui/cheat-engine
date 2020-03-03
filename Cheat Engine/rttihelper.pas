@@ -15,6 +15,13 @@ implementation
 
 uses newkernelhandler, ProcessHandlerUnit, symbolhandler, symbolhandlerstructs;
 
+function isvalidstring(s: string): boolean;
+var i: integer;
+begin
+  result:=true;
+  for i:=1 to length(s) do
+    if (ord(s[i])<32) or (ord(s[i])>126) then exit(false);
+end;
 
 function getRTTIClassNamePascal(StructureBaseAddress: ptruint; var classname: string): boolean;
 {
@@ -56,7 +63,8 @@ begin
           if (count<255) and (cname[count+1]=0) then
           begin
             classname:=pchar(@cname[1]);
-            exit(true);
+
+            exit(isvalidstring(classname));
           end;
         end;
       end;
@@ -100,6 +108,10 @@ var
   i: integer;
 
   s: string;
+
+  cp: pchar;
+
+  slen: integer;
 begin
   result:=false;
   vtable:=0;
@@ -126,6 +138,7 @@ begin
           //->48 32 6D 22 F7 7F 00 00   00 AE 7A F5 BE 01 00 00   2E 3F 41 56 74 65 73 74
           //->14 21 9E 00               00 00 00 00               2E 3F 41 56 74 65 73 74 32 40 40 00 14 21 9E 00  = 32bit
 
+          cp:=nil;
           if processhandler.is64Bit then
           begin
             if readprocessmemory(processhandle, pointer(TypeInfoAddress), @TypeInfo64,sizeof(TypeInfo64), x) then
@@ -133,14 +146,7 @@ begin
               TypeInfo64.decoratedname[255]:=#0;
 
               if copy(pchar(@TypeInfo64.decoratedname[0]),1,4)='.?AV' then
-              begin
-                s:='?'+pchar(@TypeInfo64.decoratedname[4]);
-                i:=UnDecorateSymbolName(pchar(s), @undecoratedstring[0],255,UNDNAME_NAME_ONLY);
-                undecoratedstring[i]:=0;
-
-                classname:=pchar(@undecoratedstring[0]);
-                result:=true;
-              end;
+                cp:=@TypeInfo64.decoratedname[4]
             end;
           end
           else
@@ -150,17 +156,38 @@ begin
               TypeInfo32.decoratedname[255]:=#0;
 
               if copy(pchar(@TypeInfo32.decoratedname[0]),1,4)='.?AV' then
-              begin
-                s:='?'+pchar(@TypeInfo32.decoratedname[4]);
-                i:=UnDecorateSymbolName(pchar(s), @undecoratedstring[0],255,UNDNAME_NAME_ONLY);
-                undecoratedstring[i]:=0;
-
-                classname:=pchar(@undecoratedstring[0]);
-                result:=true;
-              end;
+                cp:=@TypeInfo32.decoratedname[4]
             end;
           end;
 
+          if cp<>nil then //found the string
+          begin
+            s:='?'+cp;
+
+
+            i:=UnDecorateSymbolName(pchar(s), @undecoratedstring[0],255,UNDNAME_NAME_ONLY);
+            undecoratedstring[i]:=0;
+
+            classname:=pchar(@undecoratedstring[0]);
+
+
+            if isvalidstring(classname) then exit(true);
+            classname:=cp;
+
+            if isvalidstring(classname) then exit(true);
+
+            //everything matches (including the .?AV line), except the name is bad, still useful as an identifier
+            classname:='unknown classid ';
+            for i:=0 to 16 do
+            begin
+              if cp[i]='#0' then
+                break;
+
+              classname:=classname+inttohex(ord(cp[i]),2);
+            end;
+
+            exit(true);
+          end;
         end;
       end;
 

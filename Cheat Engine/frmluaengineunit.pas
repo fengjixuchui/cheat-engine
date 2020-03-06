@@ -122,6 +122,7 @@ type
     procedure tShowHintTimer(Sender: TObject);
   private
     { private declarations }
+    loadedFormPosition: boolean;
     hintwindow:THintWindow;
     continuemethod: integer;
     AutoCompleteStartLine: string;
@@ -1367,6 +1368,7 @@ begin
   setlength(x,1);
   if LoadFormPosition(self, x) then
   begin
+    loadedFormPosition:=true;
     panel1.height:=x[0];
     if length(x)>1 then
     begin
@@ -1380,6 +1382,7 @@ begin
         miAutoComplete.checked:=x[3]=1;
     end;
   end;
+
   {$ifdef darwin}
   miCut.ShortCut:=TextToShortCut('Meta+X');
   miCopy.ShortCut:=TextToShortCut('Meta+C');
@@ -1404,7 +1407,7 @@ begin
 end;
 
 procedure TfrmLuaEngine.FormShow(Sender: TObject);
-var i: integer;
+var i, off: integer;
 begin
   if overridefont<>nil then
     mScript.font.size:=overridefont.size
@@ -1420,6 +1423,22 @@ begin
     dpihelper.AdjustToolbar(tbDebug);
     AdjustImageList(ilSyneditDebug);
     adjustedSize:=true;
+  end;
+
+  if loadedFormPosition=false then
+  begin
+    i:=mscript.CharWidth*40+mscript.Gutter.Width+panel3.width;
+    if mscript.width<i then clientwidth:=clientwidth+(i-mscript.width);
+
+    i:=mscript.LineHeight*6;
+    off:=(i-mscript.height);
+    if mscript.height<i then panel1.height:=panel1.height+off;
+
+    clientheight:=clientheight+off;
+
+    i:=canvas.TextHeight('XXX')*10;
+    if moutput.height<i then
+      clientheight:=clientheight+(i-moutput.height);
   end;
 
 end;

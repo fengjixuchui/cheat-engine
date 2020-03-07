@@ -31,7 +31,7 @@ procedure initcetitle;
 
 
 
-const beta=' beta'; //empty this for a release
+const beta=' rc1'; //empty this for a release
 
 var
   CEnorm:string;
@@ -699,15 +699,8 @@ begin
             cbProcessIcons.Checked:=reg.ReadBool('Get process icons');
           GetProcessIcons:=cbProcessIcons.Checked;
 
-
-          if reg.ValueExists('Only show processes with icon') then
-            cbProcessIconsOnly.checked:=reg.ReadBool('Only show processes with icon');
-
           if reg.ValueExists('Pointer appending') then
             cbOldPointerAddMethod.checked:=reg.ReadBool('Pointer appending');
-
-          cbProcessIconsOnly.Enabled:=cbProcessIcons.Checked;
-          ProcessesWithIconsOnly:=cbProcessIconsOnly.Checked;
 
 
           if reg.ValueExists('skip PAGE_NOCACHE') then

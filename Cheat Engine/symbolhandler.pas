@@ -2856,7 +2856,7 @@ begin
 
   for i:=1 to length(s) do
   begin
-    if (s[i] in ['"', '[', ']', '+', '-', '*',' ']) then
+    if (s[i] in ['"', '[', ']', '+', '-', '*','(',')']) then
     begin
       if s[i]='"' then
       begin
@@ -2875,8 +2875,8 @@ begin
           tokens[length(tokens)-1]:=t;
         end;
 
-        //store seperator char as well, unless it's " or space
-        if not (s[i] in ['"',' ']) then
+        //store seperator char as well, unless it's "
+        if not (s[i] = '"') then
         begin
           setlength(tokens,length(tokens)+1);
           tokens[length(tokens)-1]:=s[i];
@@ -2904,23 +2904,16 @@ begin
   token:=uppercase(token);
   if length(token)>0 then
   begin
-    //BYTE, WORD, DWORD, UINT64/QWORD, CHAR, SHORT, INT/LONG, LONGLONG/INT64
+    //(BYTE), (WORD), (DWORD), (QWORD)/(UINT64), (CHAR), (SHORT),(LONG),(LONGLONG),(INT64)
     case token[1] of
       'B' : if token='BYTE' then begin nextTokenType:=ttByte; exit(true); end;
       'C' : if token='CHAR' then begin nextTokenType:=ttShortInt; exit(true); end;
       'D' : if token='DWORD' then begin nextTokenType:=ttDword; exit(true); end;
-      'I' : if token='INT' then
-            begin
-              nextTokenType:=ttLongint;
-              exit(true);
-            end
-            else
-            if token='INT64' then
+      'I' : if token='INT64' then
             begin
               nextTokenType:=ttInt64;
               exit(true);
             end;
-
       'L' : if token='LONG' then
             begin
               nextTokenType:=ttLongint;
@@ -2934,7 +2927,7 @@ begin
             end;
       'Q' : if token='QWORD' then begin nextTokenType:=ttQword; exit(true); end;
       'U' : if token='UINT64' then begin nextTokenType:=ttQword; exit(true); end;
-      'S' : if token='SHORTINT' then begin nextTokenType:=ttSmallint; exit(true); end; //do NOT call this short, conflicts with short jmp
+      'S' : if token='SHORT' then begin nextTokenType:=ttSmallint; exit(true); end;
       'W' : if token='WORD' then begin nextTokenType:=ttWord; exit(true); end;
     end;
   end;
@@ -4622,7 +4615,7 @@ begin
   try
     for i:=0 to length(tokens)-1 do
     begin
-      if (length(tokens[i])>0) and (not (tokens[i][1] in ['[',']','+','-','*'])) then
+      if (length(tokens[i])>0) and (not (tokens[i][1] in ['[',']','+','-','*','(',')'])) then
       begin
         val('$'+tokens[i],v64,j);
         result:=v64;
@@ -4630,12 +4623,6 @@ begin
         if j>0 then
         begin
           //not a hexadecimal value
-          if isTypeToken(tokens[i], nextTokenType) then
-          begin
-            tokens[i]:='';
-            continue;
-          end;
-
 
           if getmodulebyname(tokens[i],mi) then
           begin
@@ -4964,6 +4951,23 @@ begin
         if (length(tokens[i])>0) then
         case tokens[i][1] of
           '*' : hasMultiplication:=true;
+
+          '(':
+          begin
+            //could be a typecast
+            if (length(tokens)>i+2) and (tokens[i+2]=')') then //(something)
+            begin
+              if isTypeToken(tokens[i+1], nextTokenType) then //is something one of the types
+              begin
+                //it's a typecast, not part of the symbol
+                tokens[i]:='';
+                tokens[i+1]:='';
+                tokens[i+2]:='';
+                continue;
+              end;
+            end;
+          end;
+
           '[':
           begin
             hasPointer:=true;

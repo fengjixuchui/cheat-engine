@@ -803,7 +803,7 @@ int handle_cr3_callback(pcpuinfo currentcpuinfo,VMRegisters *vmregisters)
 
 
   //interrupt state
-  currentcpuinfo->cr3_callback.interruptability_state=vmread(0x4824);
+  currentcpuinfo->cr3_callback.interruptability_state=vmread(vm_guest_interruptability_state);
 
 
   //sendstringf("saved state: cs:eip=%x:%x\n\r",currentcpuinfo->cr3_callback.cs_selector, currentcpuinfo->cr3_callback.rip);
@@ -902,7 +902,7 @@ int handle_cr3_callback(pcpuinfo currentcpuinfo,VMRegisters *vmregisters)
 
 
 
-  vmwrite(0x4824, (1<<3)); //block by NMI, so even a nmi based taskswitch won't interrupt
+  vmwrite(vm_guest_interruptability_state, (1<<3)); //block by NMI, so even a nmi based taskswitch won't interrupt
 
   //and set IF to 0 in eflags
   currentcpuinfo->Previous_CLI=(vmread(vm_guest_rflags) >> 9) & 1;
@@ -2151,7 +2151,6 @@ int setVM_CR0(pcpuinfo currentcpuinfo, UINT64 newcr0)
 
     vpid_invalidate();
     ept_invalidate();
-
 
 
     if ((vmread(vm_guest_cr0) & 0x80000001)==0x80000001)
@@ -3558,8 +3557,19 @@ int handleInterruptProtectedMode(pcpuinfo currentcpuinfo, VMRegisters *vmregiste
 
   sendstringf("newintinfo.valid=%d\n\r",newintinfo.valid);
 
-  vmwrite(0x4016, newintinfo.interruption_information); //entry info field
-  vmwrite(0x401a, vmread(vm_exit_instructionlength)); //entry instruction length
+  if (newintinfo.type!=5)
+  {
+    vmwrite(vm_entry_interruptioninfo, newintinfo.interruption_information); //entry info field
+    vmwrite(0x401a, vmread(vm_exit_instructionlength)); //entry instruction length
+  }
+  else
+  {
+    //int1
+    vmwrite(vm_pending_debug_exceptions, vmread(vm_pending_debug_exceptions) | (1<<14) );
+    vmwrite(vm_guest_rip,vmread(vm_guest_rip)+vmread(vm_exit_instructionlength));
+  }
+
+
 
   if (isFault)
   {
@@ -4208,12 +4218,19 @@ int handleVMEvent(pcpuinfo currentcpuinfo, VMRegisters *vmregisters, FXSAVE64 *f
 
 		case 48:
 		{
+
 			int r;
 
+			outportb(0x80,48);
 		    sendstring("EPT violation\n\r");
 		    r=handleEPTViolation(currentcpuinfo, vmregisters, (PFXSAVE64)fxsave);
 
 		    ept_invalidate();
+		    if (r==0)
+		      outportb(0x80,48*2);
+			else
+			  outportb(0x80,48*2+1);
+
 		    return r;
 		}
 

@@ -4,6 +4,7 @@
  */
 
 
+
 #include "common.h"
 #include "main.h"
 #include "mm.h"
@@ -118,6 +119,8 @@ int cinthandler(unsigned long long *stack, int intnr) //todo: move to it's own s
   int i;
   DWORD thisAPICID;
   int cpunr=0;
+
+  enableserial();
 
 #ifdef DEBUG
   sendstringCS.ignorelock=1;
@@ -900,6 +903,10 @@ void vmm_entry2(void)
 void vmm_entry(void)
 {
   //make sure WP is on
+  enableserial();
+
+  sendstringf("vmm_entry\n");
+
   setCR0(getCR0() | CR0_WP);
 
   if (isAP)
@@ -909,6 +916,8 @@ void vmm_entry(void)
     while (1);
   }
   isAP=1; //all other entries will be an AP
+
+  outportb(0x80,0x00);
 
 
   initializedCPUCount=1; //I managed to run this at least...
@@ -938,8 +947,9 @@ void vmm_entry(void)
    * 11=new memory manager , dynamic cpu initialization, UEFI boot support, EPT, unrestricted support, and other new features
    * 12=vpid
    * 13=basic TSC emulation
+   * 14=properly emulate debug step
    */
-  dbvmversion=13;
+  dbvmversion=14;
   int1redirection=1; //redirect to int vector 1 (might change this to the perfcounter interrupt in the future so I don't have to deal with interrupt prologue/epilogue)
   int3redirection=3;
   int14redirection=14;
@@ -1061,6 +1071,7 @@ void vmm_entry(void)
   cpu_familyID=cpu_familyID + (cpu_ext_familyID << 4);
 
 
+  //if (0)
   if (1) //((d & (1<<28))>0) //this doesn't work in vmware, so find a different method
   {
     QWORD entrypage=0x30000;
@@ -1610,6 +1621,7 @@ AfterBPTest:
 
   InitExports();
 
+  outportb(0x80,0x10);
 
   menu2();
   return;
@@ -2218,6 +2230,7 @@ void *lalloc (void *ud, void *ptr, size_t osize, size_t nsize) {
 
 void menu(void)
 {
+  outportb(0x80,0x11);
   displayline("menu\n\r"); //debug to find out why the vm completely freezes when SERIALPORT==0
 
   sendstring("menu\n\r");
@@ -2338,7 +2351,7 @@ void menu(void)
         }
 
         //while (1) _pause(); //debug so I only see AP cpu's
-
+        outportb(0x80,0x12);
 
         startvmx(getcpuinfo());
         sendstring("BootCPU: Back from startvmx\n\r");
@@ -2510,7 +2523,7 @@ void menu(void)
         case 'l':
         {
           sendstring("Entering lua console:");
-          enterLuaConsole();
+          //enterLuaConsole();
 
 
           break;
@@ -2570,7 +2583,7 @@ void startvmx(pcpuinfo currentcpuinfo)
 #endif
 
   UINT64 a,b,c,d;
-
+  outportb(0x80,0x13);
 
 
   displayline("cpu %d: startvmx:\n",currentcpuinfo->cpunr);

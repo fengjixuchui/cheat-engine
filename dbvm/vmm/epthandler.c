@@ -2189,12 +2189,15 @@ void initMemTypeRanges()
 int remapMTRRTypes(QWORD address UNUSED, QWORD size UNUSED, int type UNUSED)
 {
   //called by the MSR write handler when MTRR registers get changed
+  initMemTypeRanges();
+
   return 1;
 }
 
 int handleMSRWrite_MTRR(void)
 //called when an MTRR msr is written. Figures out what regions have been modified
 {
+  initMemTypeRanges();
   return 1;
 }
 
@@ -2349,7 +2352,7 @@ QWORD EPTMapPhysicalMemory(pcpuinfo currentcpuinfo, QWORD physicalAddress, int f
     {
       sendstring("Assertion Fail: fullmap is false for a 1 page range");
       ddDrawRectangle(0,DDVerticalResolution-100,100,100,0xff0000);
-      while (1);
+      while (1) outportb(0x80,0xc3);
     }
 
    //memtype=0;

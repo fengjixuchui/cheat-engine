@@ -825,7 +825,7 @@ int vmexit(pcpuinfo currentcpuinfo, UINT64 *registers, void *fxsave)
 
     ddDrawRectangle(0,DDVerticalResolution-100,100,100,0xff0000);
 
-    while (1);
+    while (1) outportb(0x80,0xdc);
   }
 
   if (currentcpuinfo->vmxdata.runningvmx)
@@ -1298,6 +1298,7 @@ int vmexit(pcpuinfo currentcpuinfo, UINT64 *registers, void *fxsave)
       {
         //int cs=vmread(vm_guest_cs);
         //unsigned long long rip=vmread(vm_guest_rip);
+        skip=verbosity; //never
 
 
         break;
@@ -1452,6 +1453,12 @@ int vmexit(pcpuinfo currentcpuinfo, UINT64 *registers, void *fxsave)
   //sendstring("|   p: previous event                   |\n\r");
     sendstring("\\---------------------------------------/\n\r");
     sendstring("Your command:");
+
+#ifdef DELAYEDSERIAL
+    if (!useserial)
+      command='1';
+    else
+#endif
     command=waitforchar();
     sendstring("\n\r");
 
@@ -1757,6 +1764,8 @@ int vmexit(pcpuinfo currentcpuinfo, UINT64 *registers, void *fxsave)
         return 0;
       }
 
+
+
       case  'i' :
       {
         //test interrupt
@@ -1780,6 +1789,8 @@ int vmexit(pcpuinfo currentcpuinfo, UINT64 *registers, void *fxsave)
 
       case  's' :
       {
+        vmx_enableSingleStepMode();
+        /*
         UINT64 address;
         unsigned char bt;
         char temps[17];
@@ -1794,6 +1805,7 @@ int vmexit(pcpuinfo currentcpuinfo, UINT64 *registers, void *fxsave)
 
         *(unsigned char *)address=bt;
         sendstring("\n\r");
+        */
         break;
       }
 

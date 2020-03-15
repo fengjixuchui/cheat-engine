@@ -133,7 +133,7 @@ int cinthandler(unsigned long long *stack, int intnr) //todo: move to it's own s
   {
     sendstringf("Invalid FS base during exception\n");
     ddDrawRectangle(0,DDVerticalResolution-100,100,100,0xff0000);
-    while (1) ;
+    while (1) outportb(0x80,0xc5);
   }
 
   pcpuinfo cpuinfo=getcpuinfo();
@@ -273,7 +273,7 @@ int cinthandler(unsigned long long *stack, int intnr) //todo: move to it's own s
 
     sendstringf("longjmp just went through...\n");
     ddDrawRectangle(0,DDVerticalResolution-100,100,100,0xff0000);
-    while (1);
+    while (1) outportb(0x80,0xc6);
   }
 
   if (cpuinfo->OnInterrupt.RIP)
@@ -913,12 +913,9 @@ void vmm_entry(void)
   {
     vmm_entry2();
     sendstringf("vmm_entry2 has PHAILED!!!!");
-    while (1);
+    while (1) outportb(0x80,0xc7);
   }
   isAP=1; //all other entries will be an AP
-
-  outportb(0x80,0x00);
-
 
   initializedCPUCount=1; //I managed to run this at least...
 
@@ -1172,7 +1169,6 @@ void vmm_entry(void)
 
       //while (1) ;
       unmapPhysicalMemory(original, sizeof(OriginalState));
-
     }
 
     if (needtospawnApplicationProcessors) //e.g UEFI boot with missing mpsupport
@@ -1247,7 +1243,7 @@ void vmm_entry(void)
   {
     sendstring("Memory allocation failed\n");
     ddDrawRectangle(0,DDVerticalResolution-100,100,100,0xff0000);
-    while (1) ;
+    while (1) outportb(0x80,0xc8);
   }
 
   sendstringf("Allocated GDT_BASE %6\n", GDT_BASE);
@@ -1621,7 +1617,7 @@ AfterBPTest:
 
   InitExports();
 
-  outportb(0x80,0x10);
+  //outportb(0x80,0x10);
 
   menu2();
   return;
@@ -1798,6 +1794,11 @@ void menu2(void)
     {
       if ((!loadedOS) || (showfirstmenu))
       {
+#ifdef DELAYEDSERIAL
+        if (!useserial)
+          key='0';
+        else
+#endif
         if (loadedOS)
           key=waitforchar();
         else
@@ -2230,7 +2231,7 @@ void *lalloc (void *ud, void *ptr, size_t osize, size_t nsize) {
 
 void menu(void)
 {
-  outportb(0x80,0x11);
+  //outportb(0x80,0x11);
   displayline("menu\n\r"); //debug to find out why the vm completely freezes when SERIALPORT==0
 
   sendstring("menu\n\r");
@@ -2280,6 +2281,11 @@ void menu(void)
       displayline("Waiting for serial port command:\n");
       sendstring("waiting for command:");
 
+#ifdef DELAYEDSERIAL
+      if (!useserial)
+        command='0';
+      else
+#endif
       if (loadedOS)
       {
 //        command='0';
@@ -2351,7 +2357,7 @@ void menu(void)
         }
 
         //while (1) _pause(); //debug so I only see AP cpu's
-        outportb(0x80,0x12);
+        //outportb(0x80,0x12);
 
         startvmx(getcpuinfo());
         sendstring("BootCPU: Back from startvmx\n\r");
@@ -2583,7 +2589,7 @@ void startvmx(pcpuinfo currentcpuinfo)
 #endif
 
   UINT64 a,b,c,d;
-  outportb(0x80,0x13);
+ // outportb(0x80,0x13);
 
 
   displayline("cpu %d: startvmx:\n",currentcpuinfo->cpunr);
@@ -2731,10 +2737,7 @@ void startvmx(pcpuinfo currentcpuinfo)
           launchVMX(currentcpuinfo);
 
           sendstring("launchVMX returned\n");
-          while (1)
-          {
-
-          }
+          while (1) outportb(0x80,0xc9);
 
 
     	  }
@@ -2825,7 +2828,7 @@ void startvmx(pcpuinfo currentcpuinfo)
         {
           sendstringf(">>>>>>>>>>>>>>>>>>>>vmxon allocation has failed<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
           ddDrawRectangle(0,DDVerticalResolution-100,100,100,0xff0000);
-          while (1);
+          while (1) outportb(0x80,0xca);
         }
 
         zeromemory(currentcpuinfo->vmxon_region,4096);
@@ -2840,7 +2843,7 @@ void startvmx(pcpuinfo currentcpuinfo)
         {
           ddDrawRectangle(0,DDVerticalResolution-100,100,100,0xff0000);
           sendstringf(">>>>>>>>>>>>>>>>>>>>vmcs_region allocation has failed<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
-          while (1);
+          while (1) outportb(0x80,0xcb);
         }
 
 

@@ -203,7 +203,8 @@ end;
 procedure TfrmDBVMWatchConfig.setAddress(a: qword);
 var
   x: ptruint;
-  temp: byte;
+  temp: dword;
+  s: string;
 begin
   {$ifdef windows}
   faddress:=a;

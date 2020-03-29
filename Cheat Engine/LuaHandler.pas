@@ -742,6 +742,8 @@ begin
       end;
     end;
   end;
+
+  lua_settop(LuaVM,0);
 end;
 
 function lua_strtofloat(s: string): double;
@@ -12860,7 +12862,7 @@ begin
     lua_register(L, 'getRTTIClassName', lua_getRTTIClassName);
 
     lua_register(L, 'getAutoRunPath', lua_getAutoRunPath);
-
+    lua_register(L, 'getAutorunPath', lua_getAutoRunPath);
 
 
 

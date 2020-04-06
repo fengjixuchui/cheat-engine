@@ -297,7 +297,10 @@ begin
   //parse the symbol the cursor is at
   s:=mscript.LineText;
   if CompleterInvokedByDot then
-    Insert('.',s,mscript.CaretX)
+  begin
+    Insert('.',s,mscript.CaretX);
+    s:=copy(s,1,mscript.CaretX);
+  end
   else
     s:=copy(s,1,mscript.CaretX-1);
 
@@ -487,9 +490,7 @@ begin
     end;
   end;
 
- // APosition:=-1;
- // APosition:=scLuaCompleter.ItemList.IndexOf(s);
-
+  aposition:=-1;
 end;
 
 procedure TfrmLuaEngine.SQLConnector1AfterConnect(Sender: TObject);

@@ -168,6 +168,7 @@ type
     symbollist: TSymbolListHandler;
 
     debugpart: integer;
+    ExtendedDebugSymbolProgress: integer;
 
     skipAllSymbols: Boolean;
     skipAddressToSymbol: boolean;
@@ -250,6 +251,7 @@ type
     function getisloaded:boolean;
     function geterror:boolean;
     function getProgress:integer;
+    function getExtendedDataProgress: integer;
     function getDotNetAccess: boolean;
     function GetUserdefinedSymbolByNameIndex(symbolname:string):integer;
     function GetUserdefinedSymbolByAddressIndex(address: ptruint):integer;
@@ -263,6 +265,8 @@ type
 
     function isTypeToken(token: string; var nextTokenType: TSymHandlerTokenType): boolean;
 
+    function isParsingStructures: boolean;
+    function isloadingExtendedData: boolean;
   public
 
     kernelsymbols: boolean;
@@ -282,6 +286,9 @@ type
     property hasError: boolean read geterror;
     property hasDotNetAccess: boolean read getDotNetAccess;
     property progress: integer read getProgress;
+    property extendedDataProgess: integer read getExtendedDataProgress;
+    property parsingStructures: boolean read isParsingStructures;
+    property loadingExtendedData: boolean read isloadingExtendedData;
 
     procedure waitforsymbolsloaded(apisymbolsonly: boolean=false; specificmodule: string='');
     procedure waitForExports;
@@ -1208,20 +1215,7 @@ begin
   for i:=0 to max-1 do
   begin
     debugpart:=40000+i;
-
-    if i=251 then
-    begin
-      asm
-      nop //ok here
-      end;
-    end;
-
-    if i=252 then
-    begin
-      asm
-      nop  //bad here
-      end;
-    end;
+    ExtendedDebugSymbolProgress:=(i*100) div max;
 
     esd:=TExtraSymbolData(self.symbollist.ExtraSymbolDataList[i]);
 
@@ -1241,6 +1235,8 @@ begin
       SES(self.thisprocesshandle, 0, nil, es2address, self);
 
       self.extraSymbolData.filledin:=true;
+
+      freemem(c);
     end;
   end;
   {$ENDIF}
@@ -1272,17 +1268,6 @@ begin
   self:=TSymbolloaderthread(UserContext);
   self.processThreadEvents;
 
-     {
-  if self.thisprocessid<>GetCurrentProcessId then
-  begin
-    while true do
-    begin
-      self.processThreadEvents;
-      sleep(10);
-      if self.terminated then exit(false);
-    end;
-  end;  }
-
 
   if self.currentModuleIsNotStandard then
     s:='_'+s;
@@ -1311,8 +1296,10 @@ begin
     if self.symbollist.FindSymbol(self.currentModuleName+'.'+s)<>nil then
       exit(not self.terminated);
 
+
   sym:=self.symbollist.AddSymbol(self.currentModuleName, self.currentModuleName+'.'+s, pSymInfo.Address, symbolsize,false, extraSymbolData);
   sym:=self.symbollist.AddSymbol(self.currentModuleName, s, pSymInfo.Address, symbolsize,true, extraSymbolData); //don't add it as a address->string lookup  , (this way it always shows modulename+symbol)
+
 
   result:=not self.terminated;
 end;
@@ -1397,8 +1384,9 @@ begin
         q.Prepare;
         q.ExecSQL;
 
+        fcp:=nil;
+        getmem(fcp, sizeof(TI_FINDCHILDREN_PARAMS)+childrencount*4);
         try
-          getmem(fcp, sizeof(TI_FINDCHILDREN_PARAMS)+childrencount*4);
           zeromemory(fcp, sizeof(TI_FINDCHILDREN_PARAMS)+childrencount*4);
           fcp.Count:=childrencount;
           SymGetTypeInfo(self.thisprocesshandle, pSymInfo.ModBase, pSymInfo.TypeIndex, TI_FINDCHILDREN, fcp);
@@ -1442,7 +1430,8 @@ begin
 
 
         finally
-          freememandnil(fcp);
+          if fcp<>nil then
+            freememandnil(fcp);
         end;
 
       end;
@@ -1683,7 +1672,6 @@ begin
   hasEnumeratedAllStructures:=true;
 end;
 
-
 function EM(ModuleName:PSTR; BaseOfDll:dword64; UserContext:pointer):bool;stdcall;
 var
   self: TSymbolloaderthread;
@@ -1692,6 +1680,8 @@ var
 
 begin
   result:=false;
+
+
 
   {$IFNDEF UNIX}
   self:=TSymbolloaderthread(UserContext);
@@ -1706,6 +1696,7 @@ begin
  //
 
   self.processThreadEvents;
+
 
   if self.pdbonly then  //only files with a PDB
   begin
@@ -2504,6 +2495,9 @@ begin
         end;
 
         debugpart:=1;
+
+
+
         if thisprocesshandle<>0 then
         begin
           symbolloaderthreadcs.Enter;  //needed so selfsymbolhandlerdoesnb't cause issues
@@ -2519,6 +2513,7 @@ begin
             symsetoptions(d);
 
             SymbolsLoaded:=SymInitialize(thisprocesshandle, pchar(''), true);
+
             if symbolsloaded=false then
             begin
               SymbolsLoaded:=SymInitialize(thisprocesshandle, pchar(''), false);
@@ -2531,7 +2526,15 @@ begin
 
             if symbolsloaded then
             begin
+
+
+
               symbolscleaned:=false;
+
+
+
+
+
 
               if kernelsymbols then LoadDriverSymbols(false);
               LoadDLLSymbols(false, needstoenumodules);
@@ -2555,6 +2558,7 @@ begin
               symbolscleaned:=true;
 
             end;
+
 
 
 
@@ -2598,9 +2602,14 @@ begin
 
             if terminated then exit;
 
+
+
+
             if symbolsloaded then
             begin
               symbolscleaned:=false;
+
+
 
               debugpart:=2;
               //symsetoptions(symgetoptions or SYMOPT_CASE_INSENSITIVE);
@@ -2613,7 +2622,9 @@ begin
               //enumerate the basic data from the symbols
               //enumeratedModules:=0;
               pdbonly:=true;
+
               SymEnumerateModules64(thisprocesshandle, @EM, self );
+
 
               pdbsymbolsloaded:=true;
 
@@ -2638,9 +2649,12 @@ begin
               if not terminated then
                 EnumerateExtendedDebugSymbols;
               debugpart:=5;
+
               if not terminated then
                 EnumerateStructures;
 
+
+               debugpart:=6;
 
 
               if (targetself=false) and (length(modulelist.withdebuginfo)>0) then
@@ -2659,10 +2673,10 @@ begin
                 end;
               end;
 
-              debugpart:=6;
+              debugpart:=7;
               Symcleanup(thisprocesshandle);
               symbolscleaned:=true;
-              debugpart:=7;
+              debugpart:=8;
             end
             else
               error:=true;
@@ -2947,6 +2961,38 @@ begin
   end;
 end;
 
+function TSymHandler.getExtendedDataProgress: integer;
+begin
+  result:=0;
+  symbolloadervalid.beginread;
+  if symbolloaderthread<>nil then
+  begin
+    if symbolloaderthread.debugpart>40000 then
+      result:=symbolloaderthread.ExtendedDebugSymbolProgress;
+  end;
+
+  symbolloadervalid.Endread;
+end;
+
+function TSymHandler.isloadingExtendedData: boolean;
+begin
+  result:=false;
+  symbolloadervalid.beginread;
+  if symbolloaderthread<>nil then
+    result:=symbolloaderthread.debugpart>4000;
+
+  symbolloadervalid.Endread;
+end;
+
+function TSymHandler.isParsingStructures: boolean;
+begin
+  result:=false;
+  symbolloadervalid.beginread;
+  if symbolloaderthread<>nil then
+    result:=symbolloaderthread.debugpart=5;
+
+  symbolloadervalid.Endread;
+end;
 
 function TSymHandler.getProgress: integer;
 begin

@@ -200,6 +200,8 @@ uses processhandlerunit, parsers, Clipbrd, Globals;
 
 resourcestring
   rsSymbolsAreBeingLoaded = 'Symbols are being loaded (%d %%)';
+  rsStructuresAreBeingParsed = 'Structures are being parsed';
+  rsExtendedDebugInfoIsLoaded = 'Extended debug info is being loaded (%d %%)';
   rsPleaseOpenAProcessFirst = 'Please open a process first';
   rsAddress = 'Address';
   rsBytes = 'Bytes';
@@ -735,10 +737,19 @@ begin
 
   //if gettickcount-lastupdate>50 then
   begin
-    if (not symhandler.isloaded) and (not symhandler.haserror) then
+    if (symhandler.loadingExtendedData or symhandler.parsingStructures or (not symhandler.isloaded)) and (not symhandler.haserror) then
     begin
       if processid>0 then
-        statusinfolabel.Caption:=format(rsSymbolsAreBeingLoaded,[symhandler.progress])
+      begin
+       // symhandler.currentState:=
+        if symhandler.loadingExtendedData then
+          statusinfolabel.Caption:=format(rsExtendedDebugInfoIsLoaded,[symhandler.extendedDataProgess])
+        else
+        if symhandler.parsingStructures then
+          statusinfolabel.Caption:=rsStructuresAreBeingParsed
+        else
+          statusinfolabel.Caption:=format(rsSymbolsAreBeingLoaded,[symhandler.progress])
+      end
       else
         statusinfolabel.Caption:=rsPleaseOpenAProcessFirst;
 

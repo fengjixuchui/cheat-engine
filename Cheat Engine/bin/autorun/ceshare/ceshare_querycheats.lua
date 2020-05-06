@@ -398,7 +398,7 @@ function ceshare.CheckForCheatsClick(s)
           if ceshare.CurrentQuery[index+1].Public==false then
             --ask if the owner of the table or admin should be contacted
             local f=createForm(false)
-            f.Caption='Contact'
+            f.Caption=translate('Contact')
             local l=createLabel(f)
             l.Caption=translate('Contact who?')
             l.Align=alTop
@@ -530,7 +530,7 @@ function ceshare.CheckForCheatsClick(s)
       if index~=-1 then
         ceshare.CheatBrowserFrm.miLoad.Visible=true
         ceshare.CheatBrowserFrm.miViewComments.Visible=true
-        --ceshare.CheatBrowserFrm.miViewHistory.Visible=false --to be implemented later
+        ceshare.CheatBrowserFrm.miViewHistory.Visible=false --to be implemented later
         ceshare.CheatBrowserFrm.sep.Visible=true
         
         local entry=ceshare.CurrentQuery[index+1]
@@ -549,7 +549,7 @@ function ceshare.CheckForCheatsClick(s)
       else
         ceshare.CheatBrowserFrm.miLoad.Visible=false
         ceshare.CheatBrowserFrm.miViewComments.Visible=false
-        --ceshare.CheatBrowserFrm.miViewHistory.Visible=false
+        ceshare.CheatBrowserFrm.miViewHistory.Visible=false
         ceshare.CheatBrowserFrm.sep.Visible=false      
       end
       
@@ -572,7 +572,7 @@ function ceshare.CheckForCheatsClick(s)
   ceshare.CurrentQuery=ceshare.QueryCurrentProcess()
 
   if ceshare.CurrentQuery==nil or #ceshare.CurrentQuery==0 then
-    messageDialog('Sorry, but there are currently no tables for this target. Perhaps you can be the first',mtError,mbOK)
+    messageDialog(translate('Sorry, but there are currently no tables for this target. Perhaps you can be the first'),mtError,mbOK)
     return
   end
 
@@ -627,7 +627,7 @@ function ceshare.CheckForCheatsClick(s)
   end
   
 
- -- ceshare.CheatBrowserFrm.btnViewHistory.Visible=false --later
+  ceshare.CheatBrowserFrm.btnViewHistory.Visible=false --later
 
   ceshare.CheatBrowserFrm.show()
   ceshare.CheatBrowserFrm.AutoSize=false

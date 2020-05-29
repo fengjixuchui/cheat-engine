@@ -119,6 +119,7 @@ type
     function hasSelectedParent(memrec: TMemoryRecord): boolean;
 
     function CheatTableNodeHasOnlyAutoAssemblerScripts(CheatTable: TDOMNode): boolean; //helperfunction
+    procedure CheatTableNodeCheckForRelativeAddress(CheatTable: TDOMNode; var hasRelative, allRelative: boolean); //helperprocedure
 
 
     procedure sort(firstnode: ttreenode; compareRoutine: TTreeNodeCompare; direction: boolean);
@@ -235,6 +236,9 @@ resourcestring
   rsALNoDescription = 'No description';
   rsALAutoAssembleScritp = 'Auto Assemble script';
   rsSortOnClick = 'Sort on click';
+
+var
+  ForbiddenSearchDescriptions: TStringHashList;
 
 procedure TTreeviewWithScroll.MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
 var
@@ -567,7 +571,6 @@ private
 checks if the given xml document contains cheatentries that aren't aa scripts
 }
 var CheatEntries, currentEntry: TDOMNode;
-  vt: TVariableType;
   vtnode: TDOMNode;
 begin
   result:=true;
@@ -589,6 +592,49 @@ begin
   end;
 end;
 
+procedure __CheatTableNodeCheckForRelativeAddress(CheatTable: TDOMNode; var hasRelative, allRelative: boolean);
+var CheatEntries, currentEntry: TDOMNode;
+  addrnode: TDOMNode;
+  s: string;
+begin
+  
+  CheatEntries:=CheatTable.FindNode('CheatEntries');
+  if cheatentries<>nil then
+  begin
+    currentEntry:=CheatEntries.FirstChild;
+    while currententry<>nil do
+    begin
+      addrnode:=currententry.findnode('Address');
+      if (addrnode<>nil) and (addrnode.TextContent<>'') then
+      begin
+        s:=trim(addrnode.TextContent);
+        if (s<>'') and (s[1] in ['-', '+']) then
+          hasRelative:=true
+        else
+          allRelative:=false;
+      end;
+
+      if hasRelative and (not allRelative) then exit;
+
+      if currententry.findnode('CheatEntries')<>nil then
+        __CheatTableNodeCheckForRelativeAddress(currentEntry, hasRelative, allRelative);
+
+      currentEntry:=currentEntry.NextSibling;
+    end;
+  end;
+end;
+
+procedure TAddresslist.CheatTableNodeCheckForRelativeAddress(CheatTable: TDOMNode; var hasRelative, allRelative: boolean);
+{
+private
+checks if the given xml document contains cheatentries without relative Address
+}
+begin
+  hasRelative:=false;
+  allRelative:=true;
+  __CheatTableNodeCheckForRelativeAddress(CheatTable, hasRelative, allRelative);
+end;
+
 procedure TAddresslist.AddTableXMLAsText(xml: string; simpleCopyPaste: boolean=true);
 var doc: TXMLDocument;
     insertafter: TTreenode;
@@ -604,15 +650,19 @@ var doc: TXMLDocument;
     replace_find: string;
     replace_with: string;
     changeoffsetstring: string;
-    changeoffset: ptrUint;
-    x: ptrUint;
+    changepointerlastoffsetstring: string;
+    changeoffset: int64;
+    changepointerlastoffset: int64;
     i: integer;
     childrenaswell: boolean;
+    relativeaswell: boolean;
+    hasRelative, allRelative: boolean;
 
 
 begin
   doc:=nil;
   s:=nil;
+  relativeaswell:=false;
 
   s:=TMemoryStream.Create;
   s.WriteBuffer(xml[1],length(xml));
@@ -647,19 +697,25 @@ begin
               replace_with:=frmpastetableentry.edtReplace.text;
               changeoffsetstring:='$'+stringreplace(frmpastetableentry.edtOffset.Text,'-','-$',[rfReplaceAll]);
               changeoffsetstring:=stringreplace(changeoffsetstring,'$-','-',[rfReplaceAll]);
-              try
-                changeoffset:=strtoint(changeoffsetstring);
-              except
-                changeoffset:=0;
-              end;
+              changepointerlastoffsetstring:='$'+stringreplace(frmpastetableentry.edtPointerLastOffset.Text,'-','-$',[rfReplaceAll]);
+              changepointerlastoffsetstring:=stringreplace(changepointerlastoffsetstring,'$-','-',[rfReplaceAll]);
+
+              if not TryStrToInt64(changeoffsetstring,changeoffset) then changeoffset:=0;
+              if not TryStrToInt64(changepointerlastoffsetstring,changepointerlastoffset) then changepointerlastoffset:=0;
 
               childrenaswell:=frmPasteTableentry.cbChildrenAsWell.Checked;
             finally
               freeandnil(frmPasteTableentry);
             end;
 
-          end;
+            CheatTableNodeCheckForRelativeAddress(CheatTable, hasRelative, allRelative);
 
+            if (changeoffset<>0) and hasRelative then
+              if allRelative then
+                relativeaswell:=true
+              else
+                relativeaswell:=messagedlg(rsAdjustMRwithRelativeAddress, mtConfirmation, [mbyes, mbno], 0) = mryes;
+          end;
 
           while currententry<>nil do
           begin
@@ -678,11 +734,8 @@ begin
               memrec.setXMLnode(currentEntry);
 
 
-              if replace_find<>'' then
-                memrec.replaceDescription(replace_find, replace_with, childrenaswell);
-
-              if changeoffset<>0 then
-                memrec.adjustAddressBy(changeoffset, childrenaswell);
+              memrec.adjustAddressBy(changeoffset, changepointerlastoffset, childrenaswell, relativeaswell);
+              memrec.replaceDescription(replace_find, replace_with, childrenaswell);
             end;
             currentEntry:=currentEntry.NextSibling;
           end;
@@ -775,7 +828,10 @@ begin
     descriptionhashlist.Remove(olddescription);
 
   if newdescription<>'' then
-    descriptionhashlist[newdescription]:=memrec;
+  begin
+    if ForbiddenSearchDescriptions.Data[newdescription]=nil then
+      descriptionhashlist[newdescription]:=memrec;
+  end;
 end;
 
 function TAddresslist.getRecordWithDescription(description: string): TMemoryRecord;
@@ -2433,5 +2489,25 @@ end;
 
 initialization
   registerclass(TAddresslist);       //yes...
+
+  ForbiddenSearchDescriptions:=TStringHashList.Create(false);
+  ForbiddenSearchDescriptions.Add('BYTE',pointer(-1));
+  ForbiddenSearchDescriptions.Add('WORD',pointer(-1));
+  ForbiddenSearchDescriptions.Add('DWORD',pointer(-1));
+  ForbiddenSearchDescriptions.Add('QWORD',pointer(-1));
+  ForbiddenSearchDescriptions.Add('UINT64',pointer(-1));
+  ForbiddenSearchDescriptions.Add('CHAR',pointer(-1));
+  ForbiddenSearchDescriptions.Add('SHORT',pointer(-1));
+  ForbiddenSearchDescriptions.Add('LONG',pointer(-1));
+  ForbiddenSearchDescriptions.Add('LONGLONG',pointer(-1));
+  ForbiddenSearchDescriptions.Add('INT64',pointer(-1));
+
+  ForbiddenSearchDescriptions.Add('INT',pointer(-1));
+  ForbiddenSearchDescriptions.Add('FLOAT',pointer(-1));
+
+  ForbiddenSearchDescriptions.Add('DOUBLE',pointer(-1));
+  ForbiddenSearchDescriptions.Add('DOUBLE32L',pointer(-1));
+  ForbiddenSearchDescriptions.Add('DOUBLE32H',pointer(-1));
+
 
 end.

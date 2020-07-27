@@ -3788,9 +3788,11 @@ end;
 procedure TMainForm.miHookD3DClick(Sender: TObject);
 begin
   {$ifdef windows}
-  safed3dhook;
-
-  updated3dgui;
+  if MessageDlg('Are you sure you wish to hook Direct3D?', mtConfirmation, [mbyes,mbno],0)=mryes then
+  begin
+    safed3dhook;
+    updated3dgui;
+  end;
   {$endif}
 end;
 
@@ -6290,7 +6292,7 @@ begin
     begin
       tempaddress := tmemoryrecord(updatelist[i]).getBaseAddress;
       Inc(tempaddress, calculate);
-      tmemoryrecord(updatelist[i]).interpretableaddress := symhandler.getNameFromAddress(tempaddress, True, True);
+      tmemoryrecord(updatelist[i]).interpretableaddress := symhandler.getNameFromAddress(tempaddress, True, True, False);
     end;
   end;
 
@@ -7074,7 +7076,7 @@ begin
 
   miSetDropdownOptions.visible:=addresslist.selcount > 0;
 
-  miDBVMFindWhatWritesOrAccesses.visible:={$ifdef windows}Findoutwhataccessesthisaddress1.Visible and isIntel and isDBVMCapable{$else}false{$endif}; //02/24/2019: Most cpu's support EPT now
+  miDBVMFindWhatWritesOrAccesses.visible:={$ifdef windows}Findoutwhataccessesthisaddress1.Visible and isDBVMCapable{$else}false{$endif}; //02/24/2019: Most cpu's support EPT/NP now
   sep2.Visible:=miDBVMFindWhatWritesOrAccesses.Visible;
 
   miDBVMFindWhatWritesOrAccesses.enabled:={$ifdef windows}DBKLoaded or isRunningDBVM{$else}false{$endif};

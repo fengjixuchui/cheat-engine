@@ -1,8 +1,8 @@
+add custom type to hexview
+add recent files menu
+add autosave
+export GetUniqueAOB for aa template scripts
 
-fix force load dll
-fix networked pscan
-fix rescan filter out invalid pointers with pointermaps
-use duplicatehandle for mono pipes
 
 
 structure dissect: 
@@ -18,9 +18,6 @@ trainergen: get rid of tcheat and just use labels
 graphical memory view: 
   change format makes it black sometimes(loses position ?)
   sometimes the x position is not 0, but can't be changed back
-
-
-dbvm_speedhack
 
 graphical tutorial: continue with it
 

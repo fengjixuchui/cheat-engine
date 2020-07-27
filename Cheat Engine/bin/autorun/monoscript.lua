@@ -2,7 +2,19 @@ if getTranslationFolder()~='' then
   loadPOFile(getTranslationFolder()..'monoscript.po')
 end
 
+local thread_checkifmonoanyhow=nil
 local StructureElementCallbackID=nil
+local pathsep
+local libfolder
+
+if getOperatingSystem()==0 then
+  pathsep=[[\]]
+  libfolder='dlls'
+else
+  pathsep='/'
+  libfolder='dylibs'
+end
+
 
 mono_timeout=3000 --change to 0 to never timeout (meaning: 0 will freeze your face off if it breaks on a breakpoint, just saying ...)
 
@@ -46,6 +58,8 @@ MONOCMD_GETVTABLEFROMCLASS=35
 MONOCMD_GETMETHODPARAMETERS=36
 MONOCMD_ISCLASSGENERIC=37
 MONOCMD_ISIL2CPP=38
+
+MONOCMD_FILLOPTIONALFUNCTIONLIST=39
 
 
 
@@ -188,7 +202,7 @@ function monoIL2CPPSymbolEnum(t)
   t.freeOnTerminate(false)
   t.Name='monoIL2CPPSymbolEnum'
   
-  print("monoIL2CPPSymbolEnum");
+ -- print("monoIL2CPPSymbolEnum");
   
   local priority=nil  
   --first enum all images
@@ -283,21 +297,36 @@ function mono_ElementListCallback(class) --2nd param ignored
 end
 
 
+function fillMissingFunctions()
+  local result
+  
+  waitForExports()
+  local mono_type_get_name_full=getAddressSafe("mono_type_get_name_full") --it's defined as a symbol, but not public on some games
+  local cmd=MONOCMD_FILLOPTIONALFUNCTIONLIST
+  monopipe.lock()
+  monopipe.writeByte(MONOCMD_FILLOPTIONALFUNCTIONLIST)
+  monopipe.writeQword(mono_type_get_name_full)
+  result=monopipe.readByte()
+  monopipe.unlock()
+  
+  return result
+end
+
 function LaunchMonoDataCollector()
   --if debug_canBreak() then return 0 end
   
   if monoSymbolEnum then
     monoSymbolEnum.terminate()
     monoSymbolEnum.waitfor()
-    print("bye monoSymbolEnum")
+    --print("bye monoSymbolEnum")
     monoSymbolEnum.destroy()
     monoSymbolEnum=nil
   end
   
   if monoSymbolList then  
-    print("monoSymbolList exists");
+    --print("monoSymbolList exists");
     if tonumber(monoSymbolList.ProcessID)~=getOpenedProcessID() or (monoSymbolList.FullyLoaded==false) then     
-      print("new il2cpp SymbolList")
+      --print("new il2cpp SymbolList")
       monoSymbolList.destroy()
       monoSymbolList=nil
     end
@@ -317,29 +346,58 @@ function LaunchMonoDataCollector()
     monoeventpipe=nil
   end
 
-  local dllname="MonoDataCollector"
-  if targetIs64Bit() then
-    dllname=dllname.."64.dll"    
+
+  local dllname
+  
+  if getOperatingSystem()==0 then
+    dllname="MonoDataCollector"
+    if targetIs64Bit() then
+      dllname=dllname.."64.dll"
+    else
+      dllname=dllname.."32.dll"
+    end
+    
+    
+    autoAssemble([[
+      mono-2.0-bdwgc.mono_error_ok:
+      mov eax,1
+      ret
+    ]]) --don't care if it fails
+
+
   else
-    dllname=dllname.."32.dll"
+    
+    dllname='libMonoDataCollectorMac.dylib'
   end
   
-  autoAssemble([[ 
-mono-2.0-bdwgc.mono_error_ok: 
-mov eax,1 
-ret 
-]]) --don't care if it fails
-
-  
-
-  if injectDLL(getCheatEngineDir()..[[\autorun\dlls\]]..dllname)==false then
-    print(translate("Failure injecting the MonoDatacollector dll"))
+  local injectResult, injectError=injectLibrary(getAutorunPath()..libfolder..pathsep..dllname, true) --skip wait for symbols, we don't use it here
+  if not injectResult then
+    if injectError then
+      print(translate("Failure injecting the MonoDatacollector library"..":"..injectError))
+    else
+      print(translate("Failure injecting the MonoDatacollector library. No error given"))
+    end
     return 0
   end
-
+  
+  
   --wait till attached
-  local timeout=getTickCount()+5000;
+  local timeout=getTickCount()+5000
+  
+  
+  
+  
   while (monopipe==nil) and (getTickCount()<timeout) do
+    if (getOperatingSystem()==0) and (readInteger(getAddressSafe("MDC_ServerPipe"))==0xdeadbeef) then
+      --likely an UWP target which can not create a named pipe
+      print("UWP situation")
+      local serverpipe=createPipe('cemonodc_pid'..getOpenedProcessID(), 256*1024,1024)      
+      local newhandle=duplicateHandle(serverpipe.Handle)
+      print("New pipe handle is "..newhandle)
+      
+      writeInteger(getAddressSafe("MDC_ServerPipe"), newhandle)      
+    end
+    
     monopipe=connectToPipe('cemonodc_pid'..getOpenedProcessID() ,mono_timeout)
   end
 
@@ -348,11 +406,11 @@ ret
   end
   
   monopipe.OnError=function(self)
-    --print("monopipe error")    
+    print("monopipe error")
   end
 
   monopipe.OnTimeout=function(self)  
-    --print("monopipe timeout") 
+    --print("monopipe timeout")
     local oldmonopipe=monopipe
     monopipe=nil
     mono_AttachedProcess=0
@@ -365,7 +423,7 @@ ret
     if inMainThread() and monoSymbolEnum then
       monoSymbolEnum.terminate()    
       monoSymbolEnum.waitfor()
-      print("bye monoSymbolEnum due to timeout")
+      print("terminating monoSymbolEnum due to timeout")
       monoSymbolEnum.destroy()
       monoSymbolEnum=nil
     end
@@ -389,8 +447,13 @@ ret
   monopipe.writeByte(CMD_INITMONO)
   monopipe.ProcessID=getOpenedProcessID()
   monoBase=monopipe.readQword()
+  
+  if (monoBase==nil) or (monobase==0) then
+    return 0;
+  end
 
-  if (monoBase~=0) then
+
+  if monoBase~=0 then
     if mono_AddressLookupID==nil then
       mono_AddressLookupID=registerAddressLookupCallback(mono_addressLookupCallback)
     end
@@ -427,7 +490,13 @@ ret
 
     end
   end
-
+  
+  if getOperatingSystem()==1 then
+    --mac sometimes doesn't export mono_type_get_name_full but the symbol is defined. CE can help with this
+    fillMissingFunctions()
+  end
+  
+  
   return monoBase
 end
 
@@ -824,10 +893,10 @@ function mono_class_isgeneric(class)
 end
 
 function mono_isil2cpp(class)
-  local result=''
+  local result=false
   monopipe.lock()
   monopipe.writeByte(MONOCMD_ISIL2CPP)
-  result=monopipe.readByte()~=0 
+  result=monopipe.readByte()==1
 
   monopipe.unlock()
   return result;
@@ -870,6 +939,7 @@ function mono_class_getFullName(typeptr, isclass, nameformat)
   if isclass==nil then isclass=1 end
   if nameformat==nil then nameformat=MONO_TYPE_NAME_FORMAT_REFLECTION end
 
+  --print("mono_class_getFullName");
   local result=''
   monopipe.lock()
   monopipe.writeByte(MONOCMD_GETFULLTYPENAME)
@@ -2115,7 +2185,7 @@ function mono_invoke_method_dialog(domain, method, address)
     
     local r=mono_invoke_method(domain, method, instance, args)
     if r then
-      print(r)
+      print('Method returned: '..r)
     end
 
   end
@@ -2279,7 +2349,7 @@ end
 function monoform_miDissectShowStruct(s, address)
   if s then
     --show it
-    print("showing "..s.Name)
+    --print("showing "..s.Name)
     
     f=enumStructureForms()
     local i
@@ -2935,7 +3005,7 @@ function mono_dissect()
   end
   
   if (monoForm==nil) then
-    monoForm=createFormFromFile(getCheatEngineDir()..[[\autorun\forms\MonoDataCollector.frm]])
+    monoForm=createFormFromFile(getAutorunPath()..'forms'..pathsep..'MonoDataCollector.frm')
     if monoSettings.Value["ShowMethodParameters"]~=nil then
       if monoSettings.Value["ShowMethodParameters"]=='' then
         monoForm.miShowMethodParameters.Checked=true
@@ -2992,7 +3062,7 @@ function miMonoActivateClick(sender)
     monopipe.OnTimeout()
   else  
     if LaunchMonoDataCollector()==0 then
-      showMessage(translate("Failure to launch"))
+      showMessage(translate("Failure to launch  "))
     end
   end
 end
@@ -3004,30 +3074,15 @@ end
 
 
 
-function mono_OpenProcessMT(t)
-  if t~=nil then
-    t.destroy()
-  end
 
-  --enumModules is faster than getAddress at OpenProcess time (No waiting for all symbols to be loaded first)
-  local usesmono=false
-  local m=enumModules()
-  local i
-  for i=1, #m do
-    if (m[i].Name=='mono.dll') or (string.sub(m[i].Name,1,5)=='mono-') or (m[i].Name=='GameAssembly.dll') or (m[i].Name=='UnityPlayer.dll')  then
-      usesmono=true
-      break
-    end
-  end
-
-
-
+function mono_setMonoMenuItem(usesmono)
+  
   if usesmono then
     --create a menu item if needed
     if (miMonoTopMenuItem==nil) then
       local mfm=getMainForm().Menu
       
-	    if (mfm) then
+      if (mfm) then
         local mi
         miMonoTopMenuItem=createMenuItem(mfm)
         miMonoTopMenuItem.Caption=translate("Mono")
@@ -3035,7 +3090,7 @@ function mono_OpenProcessMT(t)
 
         mi=createMenuItem(miMonoTopMenuItem)
         mi.Caption=translate("Activate mono features")
-        mi.OnClick=miMonoActivateClick        
+        mi.OnClick=miMonoActivateClick
         mi.Name='miMonoActivate'
         miMonoTopMenuItem.Add(mi)
 
@@ -3048,7 +3103,7 @@ function mono_OpenProcessMT(t)
         
         
         miMonoTopMenuItem.OnClick=function(s)
-          miMonoTopMenuItem.miMonoActivate.Checked=monopipe~=nil          
+          miMonoTopMenuItem.miMonoActivate.Checked=monopipe~=nil
         end
         
         
@@ -3081,6 +3136,48 @@ function mono_OpenProcessMT(t)
 
     end
   end
+end
+
+function mono_checkifmonoanyhow(t)
+  while t.Terminated==false do
+    local r=getAddressSafe('mono_thread_attach')
+    
+    if r~=nil then
+      --print("thread_checkifmonoanyhow found the mono_thread_attach export")
+      thread_checkifmonoanyhow=nil
+      synchronize(mono_setMonoMenuItem, true)
+      return
+    end
+    sleep(2000)
+  end
+end
+
+
+
+
+function mono_OpenProcessMT(t)
+  if t~=nil then
+    t.destroy()
+  end
+
+  --enumModules is faster than getAddress at OpenProcess time (No waiting for all symbols to be loaded first)
+  local usesmono=false
+  local m=enumModules()
+  local i
+  for i=1, #m do
+    if (m[i].Name=='mono.dll') or (string.sub(m[i].Name,1,5)=='mono-') or (string.sub(m[i].Name,1,7)=='libmono') or (m[i].Name=='GameAssembly.dll') or (m[i].Name=='UnityPlayer.dll')  then
+      usesmono=true
+      break
+    end
+  end
+  
+  mono_setMonoMenuItem(usesmono)
+  
+  if (usesmono==false) and (getOperatingSystem()==1) and (thread_checkifmonoanyhow==nil) then
+    thread_checkifmonoanyhow=createThread(mono_checkifmonoanyhow)
+  end
+  
+  
 
   if (monopipe~=nil) and (monopipe.ProcessID~=getOpenedProcessID()) then
     --different process
@@ -4041,20 +4138,26 @@ function mono_initialize()
     registerEXETrainerFeature('Mono', function()
       local r={}
       r[1]={}
-      r[1].PathToFile=getCheatEngineDir()..[[autorun\monoscript.lua]]
-      r[1].RelativePath=[[autorun\]];
+      r[1].PathToFile=getAutorunPath()..'monoscript.lua'
+      r[1].RelativePath=getAutorunPath()
 
       r[2]={}
-      r[2].PathToFile=getCheatEngineDir()..[[autorun\forms\MonoDataCollector.frm]]
-      r[2].RelativePath=[[autorun\forms\]];
+      r[2].PathToFile=getAutorunPath()..'forms'..pathsep..'MonoDataCollector.frm'
+      r[2].RelativePath=getAutorunPath()..'forms'..pathsep
 
-      r[3]={}
-      r[3].PathToFile=getCheatEngineDir()..[[autorun\dlls\MonoDataCollector32.dll]]
-      r[3].RelativePath=[[autorun\dlls\]];
+      if getOperatingSystem()==0 then
+        r[3]={}
+        r[3].PathToFile=getAutorunPath()..libfolder..pathsep..'MonoDataCollector32.dll'
+        r[3].RelativePath=getAutorunPath()..libfolder..pathsep
 
-      r[4]={}
-      r[4].PathToFile=getCheatEngineDir()..[[autorun\dlls\MonoDataCollector64.dll]]
-      r[4].RelativePath=[[autorun\dlls\]];
+        r[4]={}
+        r[4].PathToFile=getAutorunPath()..libfolder..pathsep..'MonoDataCollector64.dll'
+        r[4].RelativePath=getAutorunPath()..libfolder..pathsep
+      else
+        r[3]={}
+        r[3].PathToFile=getAutorunPath()..libfolder..pathsep..'libMonoDataCollectorMac.dylib'
+        r[3].RelativePath=getAutorunPath()..libfolder..pathsep
+      end
 
       return r
     end)

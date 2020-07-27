@@ -97,7 +97,7 @@ resourcestring
 
 implementation
 
-uses autoassembler, mainunit, MainUnit2, LuaClass, frmluaengineunit, plugin, pluginexports,
+uses autoassembler, MainUnit, MainUnit2, LuaClass, frmluaengineunit, plugin, pluginexports,
   formsettingsunit, MemoryRecordUnit, debuggertypedefinitions, symbolhandler,
   symbolhandlerstructs,
   frmautoinjectunit, simpleaobscanner, addresslist, memscan, foundlisthelper,
@@ -3715,22 +3715,42 @@ end;
 function injectDLL(L: PLua_State): integer; cdecl;
 var
   parameters: integer;
-  filename: pchar;
-  r: boolean;
+  filename: string;
+  skipsymbolwait: boolean;
 begin
   result:=0;
   parameters:=lua_gettop(L);
-  if parameters=1 then
+  if parameters>=1 then
   begin
-    filename:=lua.lua_tostring(L,-1);
-    r:=false;
+    filename:=lua_tostring(L,1);
     try
-      r:=ce_InjectDLL(filename,pchar(''));
+      OutputDebugString('Lua: injectLibrary('+filename+')');
+
+      if parameters>1 then
+        skipsymbolwait:=lua_toboolean(L,2)
+      else
+        skipsymbolwait:=false;
+
+      cefuncproc.injectdll(filename,'');
+
+      if skipsymbolwait=false then
+      begin
+        symhandler.reinitialize;
+        symhandler.waitForExports;
+      end;
+
     except
+      on e:exception do
+      begin
+        lua_pushboolean(L, false);
+        lua_pushstring(L, e.Message);
+        exit(2);
+      end;
     end;
 
+    //still here
     result:=1;
-    lua_pushboolean(L, r);
+    lua_pushboolean(L, true);
   end;
 end;
 
@@ -4095,13 +4115,20 @@ begin
     except
       on e:exception do
       begin
-        {$ifdef cpu64}
-        lua_pushstring(L,e.Message);
-        lua_error(L);
+        {$ifdef windows}
+          {$ifdef cpu64}
+            lua_pushstring(L,e.Message);
+            lua_error(L);
+          {$else}
+            raise;
+          {$endif}
         {$else}
-        raise;
+          lua_pushnil(L);
+          lua_pushstring(L, e.message);
+          exit(2);
         {$endif}
       end;
+
     end;
 
     result:=1;
@@ -4116,6 +4143,7 @@ var parameters: integer;
   address: ptruint;
   modulenames: boolean=true;
   symbols: boolean=true;
+  sections: boolean=false;
 begin
   result:=0;
   parameters:=lua_gettop(L);
@@ -4125,10 +4153,11 @@ begin
 
     if (parameters>=2) and (not lua_isnil(L,2)) then modulenames:=lua_toboolean(L,2);
     if (parameters>=3) and (not lua_isnil(L,3)) then symbols:=lua_toboolean(L,3);
+    if (parameters>=4) and (not lua_isnil(L,4)) then sections:=lua_toboolean(L,4);
 
     lua_pop(L, lua_gettop(l));
 
-    lua_pushstring(L,symhandler.getNameFromAddress(address, symbols, modulenames));
+    lua_pushstring(L,symhandler.getNameFromAddress(address, symbols, modulenames, sections));
     result:=1;
   end
   else lua_pop(L, lua_gettop(l));
@@ -4208,6 +4237,12 @@ begin
 
   if waitTillDone then
     symhandler.waitforsymbolsloaded;
+end;
+
+function waitForSections(L: PLua_state): integer; cdecl;
+begin
+  symhandler.waitForSections;
+  result:=0;
 end;
 
 function waitForExports(L: PLua_state): integer; cdecl;
@@ -5940,6 +5975,7 @@ end;
 
 function lua_dbvm_cloak_activate(L: PLua_State): integer; cdecl;
 var PA, VA: QWORD;
+  mode :integer;
 begin
   result:=0;
   if lua_gettop(L)>=1 then
@@ -5950,7 +5986,12 @@ begin
     else
       VA:=0;
 
-    lua_pushinteger(L, dbvm_cloak_activate(PA, VA));
+    if lua_gettop(L)>=3 then
+      mode:=lua_tointeger(L,3)
+    else
+      mode:=1;
+
+    lua_pushinteger(L, dbvm_cloak_activate(PA, VA, mode));
     result:=1;
   end;
 end;
@@ -6656,6 +6697,7 @@ begin
     try
       d.showmodules:=false;
       d.showsymbols:=false;
+      d.showsections:=false;
       s:=d.disassemble(address, x);
     finally
       d.free;
@@ -12354,6 +12396,7 @@ begin
     lua_register(L, 'speedhack_setSpeed', speedhack_setSpeed);
     lua_register(L, 'speedhack_getSpeed', speedhack_getSpeed);
     lua_register(L, 'injectDLL', injectDLL);
+    lua_register(L, 'injectLibrary', injectDLL);
     lua_register(L, 'getAutoAttachList', getAutoAttachList);
 
 
@@ -12367,6 +12410,7 @@ begin
     lua_register(L, 'getModuleSize', getModuleSize);
     lua_register(L, 'getAddressSafe', getAddressSafe);
 
+    lua_register(L, 'waitForSections', waitForSections);
     lua_register(L, 'waitForExports', waitForExports);
     lua_register(L, 'waitForDotNet', waitForDotNet);
     lua_register(L, 'waitForPDB', waitForPDB);
@@ -12904,8 +12948,9 @@ begin
     initializeLuaDissectCode;
     initializeLuaByteTable;
     initializeLuaBinary;
-    {$IFDEF windows}
     initializeLuaPipeClient;
+    {$IFDEF windows}
+
     initializeLuaPipeServer;
     {$ENDIF}
     initializeLuaSymbolListHandler;

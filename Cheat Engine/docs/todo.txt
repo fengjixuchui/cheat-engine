@@ -1,5 +1,4 @@
-add autosave
-export GetUniqueAOB for aa template scripts
+add a warning when referencing an alloc in 64-bit that hasn't been allocated with a prefered base
 
 
 
@@ -33,7 +32,6 @@ pointerscan: when suspending a scan, CE closed itself(crash)
 
 test and fix the d3dhook stuff and trainer generator.  (perhaps dx12 support as well)
 
-add  access rights for the windows app user to pipes
 
 a timer causing a lua_error will eventually show c stack overflow
 

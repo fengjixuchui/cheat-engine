@@ -566,7 +566,6 @@ type
     procedure Label3Click(Sender: TObject);
     procedure MenuItem12Click(Sender: TObject);
     procedure MenuItem15Click(Sender: TObject);
-    procedure miLoadRecentClick(Sender: TObject);
     procedure miFoundListPreferencesClick(Sender: TObject);
     procedure miAutoAssembleErrorMessageClick(Sender: TObject);
     procedure miHelpClick(Sender: TObject);
@@ -1010,7 +1009,7 @@ type
     procedure SpawnCancelButton;
     procedure DestroyCancelButton;
 
-    procedure AddressListAutoAssemblerEdit(Sender: TObject; memrec: TMemoryRecord);
+    function AddressListAutoAssemblerEdit(Sender: TObject; memrec: TMemoryRecord): boolean;
     procedure createFormdesigner;
     procedure UpdateMenu;
 
@@ -3539,10 +3538,6 @@ begin
   end;
 end;
 
-procedure TMainForm.miLoadRecentClick(Sender: TObject);
-begin
-
-end;
 
 procedure TMainForm.miFoundListPreferencesClick(Sender: TObject);
 var
@@ -5701,7 +5696,6 @@ begin
   frmLuaTableScript.ScriptMode := smLua;
 
   frmLuaTableScript.Caption := rsLuaScriptCheatTable;
-  frmLuaTableScript.New1.Visible := False;
   frmLuaTableScript.Save1.OnClick := miSave.onclick;
   frmLuaTableScript.SaveAs1.OnClick:= save1.OnClick;
 
@@ -8796,11 +8790,12 @@ begin
   memrec.endEdit; //release it so the user can delete it if he/she wants to
 end;
 
-procedure TMainForm.AddressListAutoAssemblerEdit(Sender: TObject; memrec: TMemoryRecord);
+function TMainForm.AddressListAutoAssemblerEdit(Sender: TObject; memrec: TMemoryRecord): boolean;
 var
   x: TFrmAutoInject;
   y: array of integer;
 begin
+  result:=false;  //not used
   if memrec.AsyncProcessing then exit;
 
   if memrec.isBeingEdited then
@@ -8822,6 +8817,7 @@ begin
     begin
       //name:='AAEditScript';
       new1.Enabled := False;
+      miNewTab.Visible := false;
 
       editscript := True;
       editscript2 := True;
@@ -10440,9 +10436,15 @@ begin
 end;
 
 procedure TMainForm.RecentFilesClick(Sender:TObject);
+var filename: string;
 begin
   if CheckIfSaved then
-    LoadTable(RecentFiles[tmenuitem(sender).Tag],false);
+  begin
+    filename:=RecentFiles[tmenuitem(sender).Tag];
+    LoadTable(filename,false);
+    SaveDialog1.FileName:=filename;
+    OpenDialog1.FileName:=filename;
+  end;
 end;
 
 procedure TMainForm.File1Click(Sender: TObject);

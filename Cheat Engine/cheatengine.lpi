@@ -22,7 +22,7 @@
       <AutoIncrementBuild Value="True"/>
       <MajorVersionNr Value="7"/>
       <MinorVersionNr Value="1"/>
-      <BuildNr Value="6395"/>
+      <BuildNr Value="6449"/>
       <Language Value=""/>
       <CharSet Value=""/>
       <StringTable CompanyName="Cheat Engine" FileDescription="Cheat Engine" ProductVersion="7.1"/>
@@ -639,7 +639,7 @@
         <PackageName Value="LCL"/>
       </Item8>
     </RequiredPackages>
-    <Units Count="395">
+    <Units Count="396">
       <Unit0>
         <Filename Value="cheatengine.lpr"/>
         <IsPartOfProject Value="True"/>
@@ -2724,6 +2724,11 @@
         <Filename Value="machotkeys.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit394>
+      <Unit395>
+        <Filename Value="luadotnetpipe.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="LuaDotNetPipe"/>
+      </Unit395>
     </Units>
   </ProjectOptions>
   <CompilerOptions>
@@ -2791,7 +2796,7 @@
     </Other>
   </CompilerOptions>
   <Debugging>
-    <Exceptions Count="16">
+    <Exceptions Count="17">
       <Item1>
         <Name Value="EAbort"/>
         <Enabled Value="False"/>
@@ -2802,7 +2807,6 @@
       </Item2>
       <Item3>
         <Name Value="EFOpenError"/>
-        <Enabled Value="False"/>
       </Item3>
       <Item4>
         <Name Value="Unknown"/>
@@ -2837,7 +2841,6 @@
       </Item12>
       <Item13>
         <Name Value="EVariantError"/>
-        <Enabled Value="False"/>
       </Item13>
       <Item14>
         <Name Value="EFileMapError"/>
@@ -2849,6 +2852,9 @@
         <Name Value="EProcess"/>
         <Enabled Value="False"/>
       </Item16>
+      <Item17>
+        <Name Value="ESavedScanException"/>
+      </Item17>
     </Exceptions>
   </Debugging>
 </CONFIG>

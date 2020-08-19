@@ -21,7 +21,8 @@ fullAccess(address,size): Changes the protection of a block of memory to writabl
 
 loadTable(filename, merge OPTIONAL): Loads a .ct or .cetrainer. If merge is provided and set to true it will not clear the old table
 loadTable(stream ,merge OPTIONAL, ignoreluascriptdialog BOOLEAN): Loads a table from a stream object
-saveTable(filename, protect OPTIONAL): Saves the current table. If protect is provided and set to true and the filename has the .CETRAINER extension, it will protect it from reading normally
+saveTable(filename, protect OPTIONAL, dontDeactivateDesignerForms OPTIONAL): Saves the current table. If protect is provided and set to true and the filename has the .CETRAINER extension, it will protect it from reading normally
+saveTable(stream, dontDeactivateDesignerForms OPTIONAL): Saves the current table to a stream object
 
 note: addresses can be strings, they will get interpreted by ce's symbolhandler
 
@@ -287,9 +288,13 @@ registerAutoAssemblerTemplate(name, function(script: TStrings; sender: TFrmAutoI
 unregisterAutoAssemblerTemplate(ID)
 
 
-generateCodeInjectionScript(script: Tstrings, address: string): Adds a default codeinjection script to the given script
-generateAOBInjectionScript(script: Tstrings, symbolname: string, address: string): Adds an AOB injection script to the given script
-generateFullInjectionScript(script: Tstrings, address: string): Adds a Full Injection script to the given script
+generateCodeInjectionScript(script: Tstrings, address: string) - Adds a default codeinjection script to the given script
+generateAOBInjectionScript(script: Tstrings, symbolname: string, address: string, commentradius(default 10)) - Adds an AOB injection script to the given script
+generateFullInjectionScript(script: Tstrings, address: string, commentradius(default 10)) - Adds a Full Injection script to the given script
+
+getNextAllocNumber(script: TStrings): integer - scans the given script for alloc(newmem## and returns the next unused newmem number)
+addSnapshotAsComment(script: TStrings, address: integer, radius(Default 10)) - creates a comment section for AA scripts that contains a snapshot of the original code
+getUniqueAOB(address): AOBString,Offset - Scans for a unique AOB for the given address and returns the AOB as a string, and an offset applied in case the aob returned doesn't start at the given address
 
 
 
@@ -487,7 +492,6 @@ AOBScanUnique(aobstring)- Integer: scans for the aobstring and returns the first
 
 
 
-
 Regarding eventhandlers. You can initialize them using both a string of a functionname or the function itself.
 If initialized using a function itself it won't be able to get saved in the table
 
@@ -497,7 +501,7 @@ deAlloc(address, size OPTIONAL): Frees allocated memory
 
 allocateSharedMemory(name, size):
   Creates a shared memory object in the attached process of the given size if it doesn't exist yet. If size is not given and there is no shared region with this name then the default size of 4096 is used
-  It then maps this shared memory block into the currently targeted process. It returns the address of mapped region in the target process
+  It then maps this shared memory block into the currently targeted process. It returns the address of this mapped region in the target process.  Keep in mind that a process can map the same block multiple times, so keep track of your assignments
 allocateSharedMemoryLocal(name, size): Same as allocateSharedMemory but then for the Cheat Engine process itself
 
 
@@ -530,6 +534,8 @@ getCheatEngineDir(): Returns the folder Cheat Engine is located at
 getCheatEngineProcessID(): Returns the processid of cheat engine
 
 getAutorunPath() : Returns the autorun path
+getUserDocumentsPath() : Returns the path to the user documents folder. 
+
 
 disassemble(address): Disassembles the given address and returns a string in the format of "address - bytes - opcode : extra"
 splitDisassembledString(disassembledstring): Returns 4 strings. The address, bytes, opcode and extra field
@@ -564,7 +570,7 @@ unregisterFormAddNotification(Object)
 getSettingsForm(): Returns the main settings form
 getMemoryViewForm() : Returns the main memoryview form class object which can be accessed using the Form_ class methods and the methods of the classes it inherits from. There can be multiple memory views, but this will only find the original/base
 getMainForm() : Returns the main form class object which can be accessed using the Form class methods and the methods of the classes it inherits from
-getLuaEngine() : Returns the lua engine form object (Creates it if needed)
+
 getApplication() : Returns the application object. (the titlebar)
 getAddressList() : Returns the cheat table addresslist object
 getFreezeTimer() : Returns the freeze timer object
@@ -1053,13 +1059,28 @@ methods
   saveCurrentStateAsDesign() : Sets the current state of the form as the state that will be saved when the table is saved
 
 
+TfrmLuaEngine class: (Inheritance: Form->ScrollingWinControl->CustomControl->WinControl->Control->Component->Object)
+getLuaEngine() : Returns the main lua engine form object (Creates it if needed)
+createLuaEngine() : Creates a new lua engine form object. If there is no main luaengine window, this will become it. 
+
+properties
+  mOutput: Memo - Output of the luaengine window
+  mScript: SynEdit - Editor for the script
+
+methods
+
+
 TfrmAutoInject class: (Inheritance: Form->ScrollingWinControl->CustomControl->WinControl->Control->Component->Object)
 createAutoAssemblerForm(script: string OPTIONAL): TFrmAutoInject - Spawns an autoassembler window with the optionally provided script
 
 properties
   Assemblescreen: SynEdit - Editor for the script
+  TabCount: integer
+  TabScript[index]: string
 
 methods
+  addTab(): integer
+  deleteTab(index)
 
 GraphicControl Class: (Inheritance: Control->Component->Object)
 properties
@@ -2041,6 +2062,7 @@ properties
   CustomTypeName: String - If the type is vtCustom this will contain the name of the CustomType
   Script: String - If the type is vtAutoAssembler this will contain the auto assembler script
   Value: string - The value in stringform.
+  NumericalValue: number - The value in numerical form.  nil if it can not be parsed to a number
   Selected: boolean - Set to true if selected (ReadOnly)
   Active: boolean - Set to true to activate/freeze, false to deactivate/unfreeze
   Color: integer
@@ -2149,6 +2171,7 @@ properties
   OnAddressChange: function(addresslist,memrec):boolean - called when the user initiates an address column change on a record. Return true if you handle it, false for normal behaviour
   OnTypeChange: function(addresslist,memrec):boolean - called when the user initiates a type column change on a record. Return true if you handle it, false for normal behaviour
   OnValueChange: function(addresslist,memrec):boolean - called when the user initiates a value column change on a record. Return true if you handle it, false for normal behaviour
+  OnAutoAssemblerEdit: function(addresslist,memrec) - Called when the user initiates a memoryrecord AA script edit.  This function will be responsible for changing the memory record
 
 
 methods
@@ -3054,9 +3077,14 @@ global functions
 
 properties
   Path: string - Gets/Sets the current subkey (nil if main)
-  Value[]: A table access into the settings. e.g: Value["Count"]=12
+  Value[]: A table access into the settings. e.g: Value["Count"]=12  .Setting vcalue to nil will delete it
+  [] : Same as Value[]
 
 methods
+  getBinaryValue(name, stream) : Gets binary data from the registry value. Adds it after the current 'position'
+  setBinaryValue(name, stream, size OPTIONAL) : Sets binary data in the registry value. If size is given, write from the current position. If not, or size=0, writes from position 0 to the end
+  getBinaryValue(name): bytetable
+  setBinaryValue(name, bytetable)
 
 
 
@@ -3520,6 +3548,24 @@ properties
 
 methods
   getLog(): table - Returns an indexed table with the write logs. each entry has a table with the fields: address, original and new
+
+
+DotNetDataCollector class
+getDotNetDataCollector() - Returns the current dotnetdatacollector object
+
+properties
+Attached: boolean - Returns true if attached to a process
+
+
+methods
+EnumDomains(): table - Returns an index table containing all domains. Each entry is build up as {DomainHandle, name}
+EnumModuleList(DomainHandle) : table - Returns an indexed table containing information about all modules. Each module entry is build up as {ModuleHandle, BaseAddress, Name}
+EnumTypeDefs(ModuleHandle) : table - Returns an indexed table containing information about all TypeDefs (classes) . Each entry is build up as {TypeDefToken, Name, Flags, Extends}
+GetTypeDefMethods(ModuleHandle, TypedefToken) : table - Returns a table containing all the methods in the specified typedef. Each entry is build up as {MethodToken, Name, Attributes, ImplementationFlags, ILCode, NativeCode, SecondaryNativeCode[]: Integer)
+GetAddressData(address): table - Queries a specific address and returns information about it, assuming it is a valid object. It contains the following data: {StartAddress, ObjectType, ElementType, CountOffset, ElementSize, FirstElementOffset, ClassName, Fields[]{Offset, FieldType, Name} }
+
+EnumAllObjects(): table - Queries ALL defined objects. {StartAddress, Size, TypeID{token1,token2}, ClassName}   WARNING: This will take a LOOOOOONG time and if done from the main thread will make it look like CE is frozen
+
 
 
 

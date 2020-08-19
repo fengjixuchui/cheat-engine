@@ -124,7 +124,7 @@ uses autoassembler, MainUnit, MainUnit2, LuaClass, frmluaengineunit, plugin, plu
   LuaManualModuleLoader, pointervaluelist, frmEditHistoryUnit, LuaCheckListBox,
   LuaDiagram, frmUltimap2Unit, frmcodefilterunit, BreakpointTypeDef, LuaSyntax,
   LazLogger, LuaSynedit, LuaRIPRelativeScanner, LuaCustomImageList ,ColorBox,
-  rttihelper;
+  rttihelper, LuaDotNetPipe;
 
   {$warn 5044 off}
 
@@ -1605,6 +1605,7 @@ var
   l: tstringlist;
   i: integer;
 begin
+  if application.Terminated then exit;
   usesluaengineform:=false;
 
   if printoutput=nil then
@@ -4616,8 +4617,18 @@ begin
         mode:=fmCreate;
     end;
 
-    luaclass_newClass(L, TFileStream.create(filename, mode));
-    result:=1;
+    try
+      luaclass_newClass(L, TFileStream.create(filename, mode));
+      result:=1;
+    except
+      on e:exception do
+      begin
+        lua_pushnil(L);
+        lua_pushstring(L,e.Message);
+        result:=2;
+      end;
+    end;
+
   end;
 end;
 
@@ -7746,36 +7757,61 @@ begin
     else
       merge:=false;
 
+    try
 
-    if s<>nil then //read a stream
-    begin
-      ignoreluascriptdialog:=false;
-      if parameters>=3 then
-        ignoreluascriptdialog:=lua_toboolean(L,3);
+      if s<>nil then //read a stream
+      begin
+        ignoreluascriptdialog:=false;
+        if parameters>=3 then
+          ignoreluascriptdialog:=lua_toboolean(L,3);
 
-      ReadXMLFile(doc, s);
-      loadxml(doc, merge, ignoreluascriptdialog);
-    end
-    else
-      loadtable(filename,merge);
+        ReadXMLFile(doc, s);
+        loadxml(doc, merge, ignoreluascriptdialog);
+      end
+      else
+        loadtable(filename,merge);
+
+      lua_pushboolean(L,true);
+      result:=1;
+    except
+      on e:exception do
+      begin
+        lua_pushboolean(L,false);
+        lua_pushstring(L,e.message);
+        result:=2;
+      end
+    end;
   end;
-
-  lua_pop(L, lua_gettop(L));
 end;
 
 function lua_saveTable(L: Plua_State): integer; cdecl;
 var
   filename: string;
+  s: tstream=nil;
   parameters: integer;
   protect: boolean;
   dontDeactivateDesignerForms: boolean;
+  doc: TXMLDocument;
 begin
   result:=0;
 
   parameters:=lua_gettop(L);
   if parameters>=1 then
   begin
-    filename:=Lua_ToString(L, 1);
+    if lua_isstring(L, 1) then
+    begin
+      filename:=Lua_ToString(L, 1);
+    end
+    else
+    begin
+      s:=lua_toceuserdata(L, 1);
+      if s=nil then
+        exit;
+
+      if not (s is TStream) then
+        exit;
+    end;
+
     if parameters>=2 then
       protect:=lua_toboolean(L,2)
     else
@@ -7786,10 +7822,42 @@ begin
     else
       dontDeactivateDesignerForms:=true;
 
-    savetable(filename, protect, dontDeactivateDesignerForms);
-  end;
+    if s<>nil then
+    begin
+      doc:=TXMLDocument.Create;
+      try
+        SaveXML(doc, dontDeactivateDesignerForms);
+        WriteXMLFile(doc, s);
+        lua_pushboolean(L,true);
+        result:=1;
+      except
+        on e:exception do
+        begin
+          lua_pushboolean(L,false);
+          lua_pushstring(L,e.message);
+          result:=2;
+        end
+      end;
 
-  lua_pop(L, lua_gettop(L));
+      doc.free;
+    end
+    else
+    begin
+      try
+        savetable(filename, protect, dontDeactivateDesignerForms);
+        lua_pushboolean(L,true);
+        result:=1;
+      except
+        on e:exception do
+        begin
+          lua_pushboolean(L,false);
+          lua_pushstring(L,e.message);
+          result:=2;
+        end
+      end;
+    end;
+
+  end;
 end;
 
 function lua_detachIfPossible(L: Plua_State): integer; cdecl;
@@ -8486,6 +8554,21 @@ begin
     frmLuaEngine:=TfrmLuaEngine.Create(application);
 
   luaclass_newClass(L, frmLuaEngine);
+  result:=1;
+end;
+
+
+function createLuaEngine(L:PLua_State): integer; cdecl;
+var f: TfrmLuaEngine;
+begin
+  f:=TfrmLuaEngine.Create(application);
+
+  if frmLuaEngine<>nil then
+    f.miView.Visible:=false
+  else
+    frmLuaEngine:=f;
+
+  luaclass_newClass(L, f);
   result:=1;
 end;
 
@@ -10479,6 +10562,81 @@ begin
   {$ENDIF}
 end;
 
+function lua_AddSnapshotAsComment(L:PLua_state): integer; cdecl;
+var
+  script: TStrings;
+  address: ptruint;
+  radius: integer;
+begin
+  result:=0;
+  if lua_gettop(L)>=2 then
+  begin
+    script:=lua_ToCEUserData(L,1);
+    address:=lua_tointeger(L,2);
+    if lua_gettop(L)>=3 then
+      radius:=lua_tointeger(L,3)
+    else
+      radius:=10;
+
+    AddSnapshotAsComment(script, address, radius);
+    result:=1;
+  end;
+end;
+
+function lua_getNextAllocNumber(L:PLua_state): integer; cdecl;
+var script: TStrings;
+begin
+  result:=0;
+  if lua_gettop(L)>=1 then
+  begin
+    script:=lua_ToCEUserData(L,1);
+    lua_pushinteger(L, GetNextAllocNumber(script));
+    result:=1;
+  end;
+end;
+
+function lua_getUniqueAOB(L:PLua_state): integer; cdecl;
+var
+  address: ptruint;
+  mi: TModuleInfo;
+  offset: integer;
+  r: string;
+  codesize: integer;
+
+  ca: ptruint;
+  x: string;
+begin
+  result:=0;
+  if lua_gettop(L)>=1 then
+  begin
+    address:=lua_tointeger(L,1);
+    if lua_gettop(L)>=2 then
+      codesize:=lua_tointeger(L,2)
+    else
+    begin
+      //no codesize given, calculate the number of bytes needed to put a 5 byte jmp in here. (make sure to use 3th alloc param, bitch please if you don't)
+      codesize:=0;
+      ca:=address;
+      while (ca-address)<5 do
+        disassemble(ca,x);
+
+      codesize:=ca-address;
+    end;
+
+    if address<>0 then
+    begin
+      mi.baseaddress:=0;
+      symhandler.getmodulebyaddress(address,mi);
+
+      r:=GetUniqueAOB(mi,address,codesize,offset);
+
+      lua_pushstring(L,r);
+      lua_pushinteger(L,offset);
+      result:=2;
+    end;
+  end;
+
+end;
 
 function lua_registerAutoAssemblerTemplate(L:PLua_state): integer; cdecl;
 var
@@ -10566,6 +10724,7 @@ function lua_GenerateAOBInjectionScript(L: PLua_state): integer; cdecl;
 var
   script: TStrings;
   address, symbolname: string;
+  lineCountToCopy: integer;
 begin
   result:=0;
   if lua_gettop(L)>=2 then
@@ -10578,9 +10737,13 @@ begin
     else
       address:=inttohex(MemoryBrowser.disassemblerview.SelectedAddress,8);
 
+    if lua_gettop(L)>=4 then
+      lineCountToCopy:=lua_tointeger(L,4)
+    else
+      linecountToCopy:=20;
 
     try
-      GenerateAOBInjectionScript(script, address, symbolname);
+      GenerateAOBInjectionScript(script, address, symbolname, lineCountToCopy);
       lua_pushboolean(L,true);
       result:=1;
     except
@@ -10592,6 +10755,7 @@ function lua_GenerateFullInjectionScript(L: PLua_state): integer; cdecl;
 var
   script: TStrings;
   address: string;
+  lineCountToCopy: integer;
 begin
   result:=0;
   if lua_gettop(L)>=1 then
@@ -10603,8 +10767,13 @@ begin
     else
       address:=inttohex(MemoryBrowser.disassemblerview.SelectedAddress,8);
 
+    if lua_gettop(L)>=3 then
+      lineCountToCopy:=lua_tointeger(L,3)
+    else
+      linecountToCopy:=20;
+
     try
-      GenerateFullInjectionScript(script, address);
+      GenerateFullInjectionScript(script, address, lineCountToCopy);
       lua_pushboolean(L,true);
       result:=1;
     except
@@ -12785,6 +12954,7 @@ begin
 
     lua_register(L, 'activateProtection', activateProtection);
     lua_register(L, 'getLuaEngine', getLuaEngine);
+    lua_register(L, 'createLuaEngine', createLuaEngine);
     lua_register(L, 'getApplication', getApplication);
 
     lua_Register(L, 'stringToMD5String', lua_stringToMD5String);
@@ -12837,6 +13007,7 @@ begin
 
     lua_register(L, 'registerAutoAssemblerTemplate', lua_registerAutoAssemblerTemplate);
     lua_register(L, 'unregisterAutoAssemblerTemplate', lua_unregisterAutoAssemblerTemplate);
+    lua_register(L, 'getUniqueAOB', lua_getUniqueAOB);
 
     lua_register(L, 'generateCodeInjectionScript', lua_GenerateCodeInjectionScript);
     lua_register(L, 'generateAOBInjectionScript', lua_GenerateAOBInjectionScript);
@@ -12977,6 +13148,9 @@ begin
     initializeLuaCodeFilter;
     initializeLuaSynEdit;
     initializeLuaCustomImageList;
+    initializeLuaDotNetPipe;
+
+
 
 
 

@@ -124,7 +124,7 @@ type
     procedure GetAddressData(address: UINT64; var addressdata: TAddressData);
     function EnumAllObjects: TDOTNETObjectList;
     procedure freeNETObjectList(list: TDOTNETObjectList);
-
+  published
     property Connected: boolean read fConnected;
     property Attached: boolean read fAttached;
     property SupportsDotNet4_5: boolean read fSupportsDotNet4_5;
@@ -199,7 +199,9 @@ begin
       o.classname[stringlength div 2]:=#0;
 
       if (o.startaddress=0) and (o.size=0) and (o.typeid.token1=0) and (o.typeid.token2=0) and (stringlength=0) then //end of list marker
+      begin
         break;
+      end;
 
 
       r.Add(o.startaddress,o);
@@ -377,7 +379,7 @@ begin
       read(SecondaryCodeBlocks, sizeof(SecondaryCodeBlocks));
       setlength(methods[i].SecondaryNativeCode, SecondaryCodeBlocks);
       for j:=0 to SecondaryCodeBlocks-1 do
-        read(methods[i].SecondaryNativeCode[j], sizeof(TNativeCode));
+        read(methods[i].SecondaryNativeCode[j], sizeof(TNativeCode));   //7FFB82FA1D00
     end;
 
 
@@ -782,5 +784,7 @@ begin
   inherited destroy;
 end;
 
+
 end.
+
 

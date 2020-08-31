@@ -748,7 +748,10 @@ begin
   try
     lua_getglobal(Luavm, 'loadModule');
     lua_pushstring(Luavm,dllname);
-    if (lua_pcall(Luavm,1,2,0)<>0) then
+    lua_pushboolean(LuaVM,true);
+    lua_pushinteger(LuaVM,10000); //timeout of 10 secs
+
+    if (lua_pcall(Luavm,3,2,0)<>0) then
       raise exception.create('didn''t even run');
 
     if lua_isnil(Luavm,-2) then
@@ -2946,6 +2949,15 @@ begin
   if result=0 then result:=1;
   {$else}
   result:=cpucount;
+
+  if result=1 then
+  begin
+    //doubt!
+  {$ifdef darwin}
+    exit(macport.getCPUCount);
+  {$endif}
+
+  end;
   {$ENDIF}
 end;
 
@@ -3718,7 +3730,14 @@ begin
   if (length(trim(tempdiralternative))>2) and dontusetempdir then
     path:=trim(tempdiralternative)
   else
-    path:=GetTempDir;
+  begin
+    path:=trim(GetEnvironmentVariable('_NT_SYMBOL_PATH'));
+    if path='' then
+      path:=trim(GetEnvironmentVariable('_NT_ALTERNATE_SYMBOL_PATH'));
+
+    if path='' then
+      path:=GetTempDir;
+  end;
 
   path:=path+'Cheat Engine Symbols';
 
@@ -3727,7 +3746,7 @@ begin
 
   getmem(shortpath,256);
   GetShortPathName(pchar(path),shortpath,255);
-  symhandler.setsearchpath('srv*'+shortpath+'*https://msdl.microsoft.com/download/symbols');
+  symhandler.setsearchpath('srv*'+path+'*https://msdl.microsoft.com/download/symbols');
   freemem(shortpath);
 
   symhandler.reinitialize(true);

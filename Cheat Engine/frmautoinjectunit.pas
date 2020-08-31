@@ -15,7 +15,7 @@ uses
   disassembler, symbolhandler, symbolhandlerstructs, SynEdit, SynHighlighterCpp,
   SynHighlighterAA, LuaSyntax, SynPluginMultiCaret, SynEditSearch, tablist,
   SynGutterBase, SynEditMarks, math, SynEditMiscClasses, SynEditTextBase,
-  SynEditTextBuffer, LazSynEditText, SynEditLines;
+  SynEditTextBuffer, LazSynEditText, SynEditLines, SynEditKeyCmds;
 
 
 type
@@ -150,6 +150,7 @@ type
     undogroups: tlist;
     carretpos: Tpoint;
     topline: integer;
+    flags: array of TSynEditStringFlags;
   end;
 
   TBooleanArray = Array of Boolean;
@@ -341,10 +342,11 @@ type
     procedure CustomTemplateClick(sender: tobject);
     function getIsEditing: boolean;
     function getTabCount: integer;
+    procedure setTabCount(count: integer);
 
     function getTabScript(index: integer): string;
     procedure setTabScript(index: integer; script: string);
-    procedure deleteTab(index: integer);
+
   public
     { Public declarations }
 
@@ -361,6 +363,8 @@ type
     CustomTypeCallback: TCustomCallbackroutine;
     injectintomyself: boolean;
 
+    procedure deleteTab(index: integer);
+
     procedure reloadHighlighterSettings;
     procedure addTemplate(id: integer);
     procedure removeTemplate(id: integer);
@@ -370,7 +374,7 @@ type
   published
     property ScriptMode: TScriptMode read fScriptMode write setScriptMode;
     property isEditing: boolean read getIsEditing;
-    property TabCount: integer read getTabCount;
+    property TabCount: integer read getTabCount write setTabCount;
   end;
 
 
@@ -1125,8 +1129,8 @@ begin
     getenableanddisablepos(assemblescreen.Lines,a,b);
     if (a=-1) and (b=-1) then raise exception.create(rsCodeNeedsEnableAndDisable);
 
-    if autoassemble(assemblescreen.lines,false,true,true,false,aa,exceptionlist,registeredsymbols) and
-       autoassemble(assemblescreen.lines,false,false,true,false,aa,exceptionlist,registeredsymbols) then
+    if autoassemble(assemblescreen.lines,true,true,true,false,aa,exceptionlist,registeredsymbols) and
+       autoassemble(assemblescreen.lines,true,false,true,false,aa,exceptionlist,registeredsymbols) then
     begin
       //add a entry with type 255
       mainform.AddAutoAssembleScript(assemblescreen.text);
@@ -1864,6 +1868,21 @@ begin
     result:=1;
 end;
 
+procedure TfrmAutoInject.setTabCount(count: integer);
+begin
+  if tablist=nil then
+    miNewTab.Click;
+
+  while tablist.Count>count do
+    deleteTab(TabCount-1);
+
+  while tablist.count<count do
+    miNewTab.Click;
+
+  if count=1 then
+    tablist.visible:=false;
+end;
+
 function TfrmAutoInject.getTabScript(index: integer): string;
 begin
   result:='';
@@ -1986,7 +2005,6 @@ begin
     p:=assemblescreen.CaretXY;
     TAAScriptTabData(tablist.TabData[oldselection]).carretpos:=p;
 
-
     if ssl is TSynEditStringList then
     begin
       if TAAScriptTabData(tablist.TabData[oldselection]).undogroups=nil then
@@ -2001,9 +2019,17 @@ begin
 
 
       until undogroup=nil;
+
+
+      //save flags
+      setlength(TAAScriptTabData(tablist.TabData[oldselection]).flags, ssl.count);
+      for i:=0 to ssl.Count-1 do
+        TAAScriptTabData(tablist.TabData[oldselection]).flags[i]:=ssl.Flags[i];
     end;
 
   end;
+
+
 
 
 
@@ -2044,10 +2070,16 @@ begin
     end;
 
     TAAScriptTabData(tablist.CurrentTabData).undogroups.Clear;
+
+    //flags
+    for i:=0 to length(TAAScriptTabData(tablist.CurrentTabData).flags)-1 do
+       ssl.Flags[i]:=TAAScriptTabData(tablist.CurrentTabData).flags[i];
   end;
 
 
   l.free;
+
+
 
 
 {$endif}
@@ -2272,6 +2304,9 @@ begin
   miRedo.ShortCut:=TextToShortCut('Shift+Meta+X');
   miFind.ShortCut:=TextToShortCut('Meta+F');
   mifindNext.ShortCutKey2:=TextToShortcut('Meta+G');
+
+  i:=assemblescreen.Keystrokes.FindCommand(ecSelectAll);
+  if i<>-1 then assemblescreen.Keystrokes[i].ShortCut:=TextToShortCut('Meta+A');
 {$endif}
 
 end;
@@ -3126,7 +3161,7 @@ begin
         add('aobscan(' + symbolName + ',' + resultAOB + ') // should be unique');
 
       if processhandler.is64bit then
-        add('alloc(newmem' + nr + ',$1000,' + address + ')')
+        add('alloc(newmem' + nr + ',$1000,' + symbolname + ')')
       else
         add('alloc(newmem' + nr + ',$1000)');
       add('');

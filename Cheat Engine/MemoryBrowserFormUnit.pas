@@ -1558,6 +1558,8 @@ procedure TMemoryBrowser.miChangeProtectionClick(Sender: TObject);
 var
   protection: dword;
   oldprotect: dword;
+
+  l: integer;
 begin
 
   case (sender as TMenuItem).Tag of
@@ -1569,7 +1571,15 @@ begin
        protection:=PAGE_EXECUTE_READWRITE; //never
   end;
 
-  VirtualProtectEx(processhandle, pointer(hexview.Address),1,protection, oldprotect);
+  l:=max(1, hexview.SelectionStop-hexview.SelectionStart+1);
+
+  //OutputDebugString(format('start=%d stop=%x l=%d',[hexview.SelectionStart, hexview.SelectionStop, l]));
+
+  if hexview.HasSelection then
+    VirtualProtectEx(processhandle, pointer(hexview.SelectionStart),l,protection, oldprotect)
+  else
+    VirtualProtectEx(processhandle, pointer(hexview.Address),l,protection, oldprotect)
+
 end;
 
 procedure TMemoryBrowser.miExceptionIgnoreListClick(Sender: TObject);
@@ -3146,7 +3156,7 @@ begin
 
 //  copy
 
-  assemblercode:=InputboxTop(rsCheatEngineSingleLingeAssembler, Format(rsTypeYourAssemblerCodeHereAddress, [inttohex(Address, 8)]), assemblercode, x='', canceled, assemblerHistory);
+  assemblercode:=InputboxTop(rsCheatEngineSingleLingeAssembler, Format(rsTypeYourAssemblerCodeHereAddress, [inttohex(Address, 8)]), assemblercode, x='', canceled{$ifndef darwin},assemblerHistory{$endif});
   if not canceled then
   begin
 
@@ -3219,6 +3229,11 @@ begin
 
         hexview.update;
         disassemblerview.Update;
+
+        {$ifdef darwin}
+        SetFocus;
+        disassemblerview.SetFocus;
+        {$endif}
       end else raise exception.create(Format(rsIDonTUnderstandWhatYouMeanWith, [assemblercode]));
     except
       raise exception.create(Format(rsIDonTUnderstandWhatYouMeanWith, [assemblercode]));

@@ -17,7 +17,7 @@ uses
   ceguicomponents,formdesignerunit,xmlutils,vartypestrings,plugin,byteinterpreter,
   MenuItemExtra,frmgroupscanalgoritmgeneratorunit
 
-  , macport,LCLVersion;     //last one
+  , macport,LCLVersion, UTF8Process, macportdefines;     //last one
   {$endif}
 
   {$ifdef windows}
@@ -822,6 +822,7 @@ type
     freezeThread: TFreezeThread;
 
     showStaticAsStatic: boolean;
+    AddressListOverrideFontSize: boolean;
 
     RecentFiles: Tstringlist;
 
@@ -1056,7 +1057,7 @@ implementation
 uses cefuncproc, MainUnit2, ProcessWindowUnit, MemoryBrowserFormUnit, TypePopup, HotKeys,
   aboutunit, formhotkeyunit, formDifferentBitSizeUnit,
   CommentsUnit, formsettingsunit, formAddressChangeUnit, Changeoffsetunit,
-  FoundCodeUnit, advancedoptionsunit, frmProcessWatcherUnit,
+  FoundCodeUnit, AdvancedOptionsUnit, frmProcessWatcherUnit,
   formPointerOrPointeeUnit, OpenSave, formmemoryregionsunit, formProcessInfo,
   PasteTableentryFRM, pointerscannerfrm, PointerscannerSettingsFrm,
   frmFloatingPointPanelUnit, pluginexports {$ifdef windows},DBK32functions, frmUltimapUnit,
@@ -3202,9 +3203,9 @@ begin
   if foundlist <> nil then
   begin
     if foundlist.inmodule(item.index) then
-      foundlist3.Canvas.Font.Color := clgreen
+      foundlist3.Canvas.Font.Color := foundlistColors.StaticColor
     else
-      foundlist3.Canvas.Font.Color := GetSysColor(COLOR_WINDOWTEXT);
+      foundlist3.Canvas.Font.Color := foundlistColors.DynamicColor;
   end;
 end;
 
@@ -3220,7 +3221,7 @@ begin
   begin
     if (item.subItems[1]<>rsNone) and (item.subitems[0]<>item.subitems[1]) then
     begin
-      sender.Canvas.Font.color:=clred;
+      sender.Canvas.Font.color:=foundlistColors.ChangedValueColor;
       sender.canvas.font.Style:=sender.canvas.font.Style+[fsBold];
       sender.canvas.Refresh;
       drawn:=true;
@@ -3233,7 +3234,7 @@ begin
   end;
   if(not drawn)then
   begin
-    sender.Canvas.Font.color:=GetSysColor(COLOR_WINDOWTEXT);
+    sender.Canvas.Font.color:=foundlistColors.NormalValueColor;
   end;
 end;
 
@@ -3504,8 +3505,20 @@ begin
 end;
 
 procedure TMainForm.MenuItem12Click(Sender: TObject);
+{$ifdef darwin}
+var p: TProcessUTF8;
+  path: string;
+{$endif}
 begin
+  {$ifdef darwin}
+  p:=TProcessUTF8.Create(self);
+  path:=ExtractFilePath(application.ExeName)+'tutorial-x86_64';
+  OutputDebugString('path='+path);
+  p.Executable:=(path);
+  p.Execute;
+  {$else}
   shellexecute(0, 'open', pchar(cheatenginedir+'Tutorial-x86_64.exe'), nil, nil, sw_show);
+  {$endif}
 end;
 
 procedure TMainForm.MenuItem15Click(Sender: TObject);
@@ -3547,12 +3560,13 @@ begin
   f:=TfrmFoundlistPreferences.Create(self);
 
   f.Font.assign(foundlist3.font);
-  f.NormalValueColor:=GetSysColor(COLOR_WINDOWTEXT);
-  f.ChangedValueColor:=clRed;
+  f.NormalValueColor:=foundlistColors.NormalValueColor;
+  f.ChangedValueColor:=foundlistColors.ChangedValueColor;
   f.BackgroundColor:=foundlist3.color;
-  f.StaticColor:=clGreen;
-  f.DynamicColor:=GetSysColor(COLOR_WINDOWTEXT);
+  f.StaticColor:=foundlistColors.StaticColor;
+  f.DynamicColor:=foundlistColors.DynamicColor;
   f.ShowStaticAsStatic:=showStaticAsStatic;
+  f.UseThisFontSize:=AddressListOverrideFontSize;
   if f.showmodal=mrok then
   begin
     foundlist3.font.Assign(f.font);
@@ -3563,6 +3577,7 @@ begin
     foundlistColors.StaticColor:=f.StaticColor;
     foundlistColors.DynamicColor:=f.DynamicColor;
     showStaticAsStatic:=f.ShowStaticAsStatic;
+    AddressListOverrideFontSize:=f.UseThisFontSize;
 
 
 
@@ -3578,6 +3593,7 @@ begin
         reg.WriteInteger('FoundList.DynamicColor', foundlistcolors.DynamicColor);
         reg.WriteInteger('FoundList.BackgroundColor',foundlist3.Color);
         reg.WriteBool('FoundList.ShowStaticAsStatic',ShowStaticAsStatic);
+        reg.WriteBool('FoundList.OverrideFontSize',AddressListOverrideFontSize);
 
         SaveFontToRegistry(foundlist3.font, reg);
       end;
@@ -3604,7 +3620,12 @@ end;
 
 procedure TMainForm.miLuaDocumentationClick(Sender: TObject);
 begin
+  {$ifdef darwin}
+  OpenDocument(pchar(ExtractFilePath(application.ExeName)+'../Lua/celua.txt'));
+  {$else}
   ShellExecute(0,'open',pchar(ExtractFilePath(application.ExeName)+'celua.txt'),nil,nil,SW_SHOW);
+  {$endif}
+
 end;
 
 procedure TMainForm.miForgotScanClick(Sender: TObject);
@@ -6013,12 +6034,6 @@ begin
   end;
 
 
-  foundlistColors.NormalValueColor:=GetSysColor(COLOR_WINDOWTEXT);
-  foundlistColors.ChangedValueColor:=clRed;
-  foundlistColors.StaticColor:=clGreen;
-  foundlistColors.DynamicColor:=GetSysColor(COLOR_WINDOWTEXT);
-  showStaticAsStatic:=true;
-
   RecentFiles:=tstringlist.Create;
   cereg.readStrings('Recent Files', RecentFiles);
 
@@ -6043,6 +6058,9 @@ begin
   copy1.ShortCut:=TextToShortCut('Meta+C');
   paste1.ShortCut:=TextToShortCut('Meta+V');
   menuitem1.ShortCut:=TextToShortCut('Meta+A');
+
+  miTutorial.Visible:=false;
+  menuitem15.Visible:=false;
   {$endif}
 end;
 
@@ -7914,7 +7932,11 @@ begin
     {$endif}
 
     if messagedlg(rsTryTutorial, mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+    {$ifdef darwin}
+      MenuItem12.click;
+    {$else}
       miTutorial.Click;
+    {$endif}
   end;
 
   if reg.ValueExists('Show previous value column') then
@@ -8109,6 +8131,10 @@ begin
   panel6.clientheight:=cbPauseWhileScanning.top+cbPauseWhileScanning.height+2;
   gbScanOptions.ClientHeight:=panel6.top+panel6.height+2;
 
+  i:=GetFontData(font.Handle).Height;
+  fromaddress.Font.Height:=i;
+  toaddress.Font.Height:=i;
+
   if Reg.OpenKey('\Software\Cheat Engine\FoundList', false) then
   begin
     if reg.ValueExists('FoundList.NormalValueColor') then foundlistcolors.NormalValueColor:=reg.ReadInteger('FoundList.NormalValueColor');
@@ -8117,8 +8143,19 @@ begin
     if reg.ValueExists('FoundList.DynamicColor') then foundlistcolors.DynamicColor:=reg.ReadInteger('FoundList.DynamicColor');
     if reg.ValueExists('FoundList.BackgroundColor') then foundlist3.color:=reg.ReadInteger('FoundList.BackgroundColor');
     if reg.ValueExists('FoundList.ShowStaticAsStatic') then showStaticAsStatic:=reg.ReadBool('FoundList.ShowStaticAsStatic');
+    if reg.ValueExists('FoundList.OverrideFontSize') then AddressListOverrideFontSize:=reg.ReadBool('FoundList.OverrideFontSize');
 
     LoadFontFromRegistry(foundlist3.font,reg);
+    if not AddressListOverrideFontSize then Foundlist3.Font.Height:=i;
+  end
+  else
+  begin
+    foundlistColors.NormalValueColor:=GetSysColor(COLOR_WINDOWTEXT);
+    foundlistColors.ChangedValueColor:=clRed;
+    foundlistColors.StaticColor:=clGreen;
+    foundlistColors.DynamicColor:=GetSysColor(COLOR_WINDOWTEXT);
+    showStaticAsStatic:=true;
+    Foundlist3.Font.Height:=i;
   end;
   freeandnil(reg);
 
@@ -8239,18 +8276,6 @@ begin
   end;
 
   panel9.borderspacing.Top:=(scantype.height div 2)-(cbNot.Height div 2);
-
-  i:=GetFontData(font.Handle).Height;
-
-
-  fromaddress.Font.Height:=i;
-  toaddress.Font.Height:=i;
-  Foundlist3.Font.Height:=i;
-
-
-
-
-
 
   if cleanrun then //clean setup
   begin
@@ -10628,3 +10653,4 @@ initialization
 
 end.
 
+open

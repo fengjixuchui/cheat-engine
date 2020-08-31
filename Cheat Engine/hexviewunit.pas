@@ -1614,7 +1614,7 @@ end;
 procedure THexView.UpdateMemoryInfo;
 {$IFNDEF STANDALONEHV}
 var
-  mbi: TMEMORYBASICINFORMATION;
+  mbi: {$ifdef darwin}macport.{$endif}TMEMORYBASICINFORMATION;
   a: ptrUint;
   a64: qword;
   mi: TModuleInfo;
@@ -1965,6 +1965,10 @@ begin
     i:=customtype.ConvertDataToInteger(@bytes[0],a);
     result:=format('%d',[i]);
   end;
+
+  if (not full) and (length(result)>customtype.bytesize*2+customtype.bytesize-1) then
+    result:=copy(result,1,customtype.bytesize*2+customtype.bytesize-4)+'...';
+
 end;
 
 function THexView.getChar(a: ptrUint; out charlength: integer): string;

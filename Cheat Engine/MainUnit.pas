@@ -826,6 +826,7 @@ type
 
     RecentFiles: Tstringlist;
 
+    procedure ClearRecentFiles(Sender:TObject);
     procedure RecentFilesClick(Sender:TObject);
     procedure CheckForSpeedhackKey(sender: TObject);
 
@@ -1284,15 +1285,17 @@ resourcestring
   rsProcessing = '<Processing>';
   rsCompareToSavedScan = 'Compare to first/saved scan';
   rsModified = 'Modified';
-  rsRequiresDBVMCapableIntelCPU = 'This function requires an Intel CPU with '
+  rsRequiresDBVMCapableCPU = 'This function requires an CPU with '
     +'virtualization support. If your system has that then make sure that '
     +'you''re currently not running inside a virtual machine. (Windows has '
     +'some security features that can run programs inside a VM)';
-  rsRequiresEPT = 'This function requires that your CPU supports ''Extended '
-    +'Page Table (EPT)'' which your CPU lacks';
-  rsRequiresDBVMEPT = 'DBVM find routines needs DBVM for EPT page hooking. '
+  rsRequiresEPT = 'This function requires that your CPU supports ''Intel Extended '
+    +'Page Table (EPT) or AMD Nested Paging'' which your CPU lacks';
+  rsRequiresDBVMEPT = 'DBVM find routines needs DBVM for EPT/NP page hooking. '
     +'Loading DBVM can potentially cause a system freeze. Are you sure?';
   rsDbvmWatchFailed = 'dbvm_watch failed';
+  rsAreYouSure = 'Are you sure?';
+  rsClearRecentFiles = 'Empty Recent Files List';
 
 var
   ncol: TColor;
@@ -1387,7 +1390,7 @@ begin
   begin
     //new entry
     recentfiles.insert(0, filepath);
-    while recentfiles.count>10 do
+    while recentfiles.count>20 do
       recentfiles.Delete(recentfiles.count-1);
   end;
   cereg.writeStrings('Recent Files', recentfiles);
@@ -7510,9 +7513,9 @@ begin
     LoadDBK32;
 
   canuseept:=hasEPTSupport;
-  if (isintel=false) or (isDBVMCapable=false) then
+  if (isDBVMCapable=false) then
   begin
-    messagedlg(rsRequiresDBVMCapableIntelCPU, mtError, [mbok], 0);
+    messagedlg(rsRequiresDBVMCapableCPU, mtError, [mbok], 0);
     exit;
   end;
 
@@ -10460,6 +10463,15 @@ begin
   addresslist.Clear;
 end;
 
+procedure TMainForm.ClearRecentFiles(Sender:TObject);
+begin
+  if MessageDlg(rsAreYouSure, mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+  begin
+    recentfiles.Clear;
+    cereg.writeStrings('Recent Files', recentfiles);
+  end;
+end;
+
 procedure TMainForm.RecentFilesClick(Sender:TObject);
 var filename: string;
 begin
@@ -10469,6 +10481,7 @@ begin
     LoadTable(filename,false);
     SaveDialog1.FileName:=filename;
     OpenDialog1.FileName:=filename;
+    recentFilesUpdate(filename);
   end;
 end;
 
@@ -10491,6 +10504,15 @@ begin
     miLoadRecent.Add(m);
   end;
 
+  m:=tmenuitem.Create(miLoadRecent);
+  m.Caption:='-';
+  miLoadRecent.Add(m);
+
+  m:=tmenuitem.Create(miLoadRecent);
+  m.Name:='miEmptyRecentFilesList';
+  m.Caption:=rsClearRecentFiles;
+  m.OnClick:=ClearRecentFiles;
+  miLoadRecent.Add(m);
 end;
 
 procedure TMainForm.actOpenProcesslistExecute(Sender: TObject);

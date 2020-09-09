@@ -207,25 +207,8 @@ function ceshare.CheckForCheatsClick(s)
       if selected and listitem.index then
         local desc=ceshare.CurrentQuery[listitem.index+1].Description
         
-        ceshare.CheatBrowserFrm.imgDescription.Width=ceshare.CheatBrowserFrm.ScrollBox1.ClientWidth
-        ceshare.CheatBrowserFrm.imgDescription.Height=ceshare.CheatBrowserFrm.ScrollBox1.ClientHeight
+        ceshare.CheatBrowserFrm.mDescription.Lines.Text=desc
         
-        ceshare.CheatBrowserFrm.imgDescription.Picture.Bitmap.Canvas.Brush.Color=0xffffff
-        ceshare.CheatBrowserFrm.imgDescription.Picture.Bitmap.Width=ceshare.CheatBrowserFrm.ScrollBox1.Width
-        ceshare.CheatBrowserFrm.imgDescription.Picture.Bitmap.Height=ceshare.CheatBrowserFrm.ScrollBox1.Height
-
-        ceshare.CheatBrowserFrm.imgDescription.Picture.Bitmap.Canvas.fillRect(0,0,ceshare.CheatBrowserFrm.ScrollBox1.Width,ceshare.CheatBrowserFrm.ScrollBox1.Height)
-
-        local imgrect={Left=0,Top=0,Right=ceshare.CheatBrowserFrm.imgDescription.Width, Bottom=ceshare.CheatBrowserFrm.imgDescription.Height}
-
-        
-
-        local r=ceshare.CheatBrowserFrm.imgDescription.Picture.Bitmap.Canvas.textRect(imgrect,0,0,desc);
-        if r then --ce 7.1+ gets the actually needed rect
-
-        else
-
-        end
         
         --[[local rating=ceshare.CurrentQuery[listitem.index+1].YourRating    
         if rating then
@@ -304,6 +287,34 @@ function ceshare.CheckForCheatsClick(s)
           while AddressList.Count>0 do
             AddressList[0].destroy()
           end
+        end
+        
+        if not ceshare.decodeFunctionHooked then
+          local originalDecode=decodeFunction
+          local noToAll=false
+          local yesToAll=false
+          decodeFunction=function(data)
+            local decodeIt=yesToAll
+
+            if (noToAll or yesToAll) == false then 
+              local r=messageDialog(translate('The current table is trying to load obfuscated code. This often means mallicious intent as tables are supposed to be public. Do you wish to execute this lua code anyhow?'), mtWarning, mbYes,  mbNo, mbYesToAll, mbNoToAll)
+              if r==mrYes then
+                decodeIt=true
+              elseif r==mrYesToAll then
+                decodeIt=true
+                yesToAll=true
+              elseif r==mrNoToAll then
+                decodeIt=false
+                noToAll=true
+              end              
+            end
+            if decodeIt==false then 
+              return function() return nil end --dummy function
+            else 
+              return originalDecode(data)
+            end            
+          end
+          ceshare.decodeFunctionHooked=true
         end
         
         loadTable(cheattabless)        

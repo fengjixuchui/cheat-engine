@@ -155,6 +155,8 @@ getFileVersion(pathtofile): returns the 64-bit file version, and a table that ha
 
 getFileList(Path:string, searchMask:string OPTIONAL, SearchSubDirs: boolean OPTIONAL, DirAttrib: integer OPTIONAL): Returns an indexed table with filenames
 getDirectoryList(Path:string, SearchSubDirs: boolean OPTIONAL): Returns an indexed table with directory names
+extractFileName(filepath): returns the filename of the path
+extractFilePath(filepath): removes the filename from the path
 
 enableWindowsSymbols(): Will download the PDB files of Windows and load them (Takes a long time the first time)
 getAddress(string, local OPTIONAL): returns the address of a symbol. Can be a modulename or an export. set Local to true if you wish to querry the symboltable of the ce process
@@ -799,6 +801,7 @@ properties:
   Enabled: boolean - Determines if the object is usable or greyed out
   Visible: boolean - Determines if the object is visible or not
   Color: ColorDefinition/RGBInteger - The color of the object. Does not affect the caption
+  RGBColor: RGBInteger - The color of the object in RGB formatting
   Parent: WinControl - The owner of this control
   PopupMenu: PopupMenu - The popup menu that shows when rightclicking the control
   Font: Font - The font class associated with the control
@@ -898,6 +901,8 @@ properties
   Menu: Menu - The menu this item resides in
   Parent: MenuItem - The menuitem this item hangs under
   MenuIndex: integer - The position this menu item is in it's parent
+  ImageList: ImageList
+  ImageIndex: integer - Which image of the attached ImageList to show
   Item[] : Array to access each child menuitem
   [] : Item[]
   OnClick: Function to call when the menu item is activated
@@ -1043,7 +1048,9 @@ methods
   registerCloseCallback(function(f)): userdata - Registers a function to be called when the form has been closed
   unregisterCloseCallback(userdata) - removes the specific callback
 
-  dragNow():  Call this on mousedown on any object if you wish that the mousemove will drag the whole form arround. Useful for borderless windows (Dragging will stop when the mouse button is released)
+  dragNow() -  Call this on mousedown on any object if you wish that the mousemove will drag the whole form arround. Useful for borderless windows (Dragging will stop when the mouse button is released)
+  saveFormPosition({IntegerTable OPTIONAL}) - Saves the current form position and dimensions and an optional list of integer. The name of the form must have been set to a unique name
+  loadFormPosition(): boolean, {IntegerTable OPTIONAL, can be nil} - Restores the form position and dimensions. On success returns true and a integer table if that was provided with the save.  The name of the form must have been set to a unique name
 
 
 CEForm Class: (Inheritance: Form->ScrollingWinControl->CustomControl->WinControl->Control->Component->Object)
@@ -1656,6 +1663,7 @@ methods
 
   line(sourcex, sourcey, destinationx, destinationy)
   lineTo(destinationx, destinationy)
+  moveTo(destinationx, destinationy)
   rect(x1,y1,x2,y2) - Draws a rectangle
   fillRect(x1,y1,x2,y2) - Draws a filled rectangle
   roundRect(x1,y1,x2,y2,rx,ry) - Draws a rectangle with rounded corners
@@ -1677,7 +1685,7 @@ methods
   copyRect(dest_x1,dest_y1,dest_x2,dest_y2, sourceCanvas, source_x1,source_y1,source_x2,source_y2) : Draws an image from one source to another. Useful in cases of doublebuffering
   strectDraw(rect
   draw(x,y, graphic) : Draw the image of a specific Graphic class
-  strectDraw(rect, graphic): Draw the image of a specific Graphic class and stretch it so it fits in the given rectangle
+  stretchDraw(rect, graphic): Draw the image of a specific Graphic class and stretch it so it fits in the given rectangle
   getClipRect() : Returns a table containing the fields Left, Top, Right and Bottom, which define the invalidated region of the graphical object. Use this to only render what needs to be rendered in the onPaint event of objects
 
 Pen Class : (Inheritance: CustomPen->CanvasHelper->Object)
@@ -3559,10 +3567,13 @@ Attached: boolean - Returns true if attached to a process
 
 
 methods
-EnumDomains(): table - Returns an index table containing all domains. Each entry is build up as {DomainHandle, name}
+EnumDomains(): table - Returns an index table containing all domains. Each entry is build up as {DomainHandle, Name}
 EnumModuleList(DomainHandle) : table - Returns an indexed table containing information about all modules. Each module entry is build up as {ModuleHandle, BaseAddress, Name}
 EnumTypeDefs(ModuleHandle) : table - Returns an indexed table containing information about all TypeDefs (classes) . Each entry is build up as {TypeDefToken, Name, Flags, Extends}
 GetTypeDefMethods(ModuleHandle, TypedefToken) : table - Returns a table containing all the methods in the specified typedef. Each entry is build up as {MethodToken, Name, Attributes, ImplementationFlags, ILCode, NativeCode, SecondaryNativeCode[]: Integer)
+GetTypeDefParent(ModuleHandle, TypedefToken): {ModuleHandle, TypedefToken}
+GetTypeDefData(ModuleHandle, TypedefToken) : table - Returns a table containing all the fields in the specified typedef.  {ObjectType, ElementType, CountOffset, ElementSize, FirstElementOffset, ClassName, Fields[]{Offset, FieldType, Name} }
+GetMethodParameters(ModuleHandle, MethodDefToken): table - Returns a table containing all the parameters of the method. {Name, CType}
 GetAddressData(address): table - Queries a specific address and returns information about it, assuming it is a valid object. It contains the following data: {StartAddress, ObjectType, ElementType, CountOffset, ElementSize, FirstElementOffset, ClassName, Fields[]{Offset, FieldType, Name} }
 
 EnumAllObjects(): table - Queries ALL defined objects. {StartAddress, Size, TypeID{token1,token2}, ClassName}   WARNING: This will take a LOOOOOONG time and if done from the main thread will make it look like CE is frozen
@@ -3684,3 +3695,17 @@ methods
   getPointIndexAt(x,y): integer - Returns the pointindex at the given x, y coordinate
   addPoint(x,y,index OPTIONAL): creates a point. If no index is given if inside the line at that line index, else at the end of the list.  If a index is given at that specific index. 
   removeAllPoints(): Removes all points
+
+RemoteExecutor class
+The remoteExecute class creates an executor thread inside the target process waiting for commands to execute specific functions
+An executor can only run one piece of code at a time, but you can have more than one executor
+
+createExecuteMethodStub(callmethod, address, classregisternr, {type=typenr},typenr,{type=5, size=y, isOutputOnly=true/false, isInputOnly=true/false }, ....) - Creates an ExecuteCodeExStub object which the executor can execute
+createExecuteCodeExStub(callmethod, address, {type=typenr},typenr,{type=5, size=y, isOutputOnly=true/false, isInputOnly=true/false }, ....) - Creates an ExecuteCodeExStub object which the executor can execute
+createRemoteExecutor() - creates a new remote executor
+
+properties
+
+methods
+  executeStub(ExecuteCodeExStub,{parameters},timeout,waittilldone) 
+

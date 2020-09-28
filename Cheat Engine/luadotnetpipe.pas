@@ -149,9 +149,11 @@ begin
     modulehandle:=lua_tointeger(L,1);
     typedeftoken:=lua_tointeger(L,2);
 
-    setlength(methods,0);
-    dnp.GetTypeDefMethods(modulehandle, typedeftoken, methods);
+    lua_pop(L,lua_gettop(L));
 
+    setlength(methods,0);
+
+    dnp.GetTypeDefMethods(modulehandle, typedeftoken, methods);
     lua_createtable(L,length(methods),0);
 
     for i:=0 to length(methods)-1 do
@@ -159,7 +161,8 @@ begin
       //MethodToken, Name, Attributes, ImplementationFlags, ILCode, NativeCode, SecondaryNativeCode[]
 
       lua_pushinteger(L,i+1);
-      lua_createtable(L,0,4);
+      lua_createtable(L,0,7);
+
 
       lua_pushstring(L, 'MethodToken');
       lua_pushinteger(L, methods[i].token);
@@ -190,15 +193,174 @@ begin
 
       for j:=0 to length(methods[i].SecondaryNativeCode)-1 do
       begin
-        lua_pushinteger(L,i+1);
+        lua_pushinteger(L,j+1);
         lua_pushinteger(L,methods[i].SecondaryNativeCode[j].address);
-        lua_settable(L,-3);
+        lua_settable(L,-3); //methods[i].SecondaryNativeCode[j+1]=address
       end;
+      lua_settable(L,-3); //methods[i].SecondaryNativeCode={}
+
+
+      lua_settable(L,-3); //methods[i]={}
+    end;
+
+    result:=1;
+  end;
+end;
+
+function dotnetpipe_getMethodParameters(L: PLua_state): integer; cdecl;
+var
+  dnp: TDotNetPipe;
+  modulehandle: uint64;
+  methoddef: dword;
+  methodparameters: TDotNetMethodParameters;
+  i: integer;
+begin
+  result:=0;
+  dnp:=luaclass_getClassObject(L);
+  if lua_gettop(L)>=2 then
+  begin
+    modulehandle:=lua_tointeger(L,1);
+    methoddef:=lua_tointeger(L,2);
+    dnp.getmethodparameters(modulehandle, methoddef,methodparameters);
+
+    lua_createtable(L, length(methodparameters), 0);
+    for i:=0 to length(methodparameters)-1 do
+    begin
+      lua_pushinteger(L,i+1);
+      lua_createtable(L,0,2);
+
+      lua_pushString(L,'Name');
+      lua_pushString(L,methodparameters[i].name);
+      lua_settable(L,-3);
+
+      lua_pushString(L,'CType');
+      lua_pushinteger(L,methodparameters[i].ctype);
+      lua_settable(L,-3);
 
       lua_settable(L,-3);
     end;
 
     result:=1;
+  end;
+end;
+
+function dotnetpipe_getTypeDefParent(L: PLua_state): integer; cdecl;
+var
+  dnp: TDotNetPipe;
+  module: QWORD;
+  typedef: dword;
+  tdpi: TTypeDefInfo;
+begin
+  result:=0;
+  dnp:=luaclass_getClassObject(L);
+  if lua_gettop(L)>=2 then
+  begin
+    module:=lua_tointeger(L,1);
+    typedef:=lua_tointeger(L,2);
+    dnp.GetTypeDefParent(module, typedef, tdpi);
+    if tdpi.module=0 then exit(0);
+
+    lua_pop(L,lua_gettop(L));
+
+    lua_createtable(L,0,2);
+    lua_pushstring(L,'ModuleHandle');
+    lua_pushinteger(L, tdpi.module);
+    lua_settable(L,-3);
+
+    lua_pushstring(L,'TypeDef');
+    lua_pushinteger(L, tdpi.token);
+    lua_settable(L,-3);
+    exit(2);
+  end;
+
+end;
+
+function dotnetpipe_getTypeDefData(L: PLua_state): integer; cdecl;
+var
+  dnp: TDotNetPipe;
+  module: QWORD;
+  typedef: dword;
+  typedata: TTypeData;
+  i: integer;
+begin
+  result:=0;
+  dnp:=luaclass_getClassObject(L);
+  if lua_gettop(L)>=2 then
+  begin
+    module:=lua_tointeger(L,1);
+    typedef:=lua_tointeger(L,2);
+
+    FillByte(typedata, sizeof(typedata),0);
+
+    dnp.getTypeDefData(module,typedef, typedata);
+
+    if typedata.classname='' then exit(0);
+
+    lua_createtable(L,0,7);
+    lua_pushstring(L,'ObjectType');
+    lua_pushinteger(L, typedata.ObjectType);
+    lua_settable(L,-3);
+
+    lua_pushstring(L,'ElementType');
+    lua_pushinteger(L, typedata.ElementType);
+    lua_settable(L,-3);
+
+    lua_pushstring(L,'CountOffset');
+    lua_pushinteger(L, typedata.CountOffset);
+    lua_settable(L,-3);
+
+    lua_pushstring(L,'ElementSize');
+    lua_pushinteger(L, typedata.ElementSize);
+    lua_settable(L,-3);
+
+    lua_pushstring(L,'FirstElementOffset');
+    lua_pushinteger(L, typedata.FirstElementOffset);
+    lua_settable(L,-3);
+
+    lua_pushstring(L,'ClassName');
+    lua_pushstring(L, typedata.ClassName);
+    lua_settable(L,-3);
+
+    lua_pushstring(L,'Fields');
+    lua_createtable(L, length(typedata.fields),0);
+    for i:=0 to length(typedata.Fields)-1 do
+    begin
+      lua_pushinteger(L, i+1);
+      lua_createtable(L,0,5);
+
+      lua_pushstring(L,'Token');
+      lua_pushinteger(L, typedata.fields[i].Token);
+      lua_settable(L,-3);
+
+      lua_pushstring(L,'Offset');
+      lua_pushinteger(L, typedata.fields[i].offset);
+      lua_settable(L,-3);
+
+      lua_pushstring(L,'FieldType');
+      lua_pushinteger(L, typedata.fields[i].fieldtype);
+      lua_settable(L,-3);
+
+      lua_pushstring(L,'Name');
+      lua_pushstring(L, typedata.fields[i].name);
+      lua_settable(L,-3);
+
+      lua_pushstring(L,'FieldTypeClassName');
+      lua_pushstring(L, typedata.fields[i].fieldTypeClassName);
+      lua_settable(L,-3);
+
+      lua_pushstring(L,'IsStatic');
+      lua_pushboolean(L, typedata.fields[i].IsStatic);
+      lua_settable(L,-3);
+
+
+      lua_settable(L,-3);
+    end;
+    lua_settable(L,-3);
+
+
+
+    result:=1;
+
   end;
 end;
 
@@ -226,46 +388,58 @@ begin
     lua_settable(L,-3);
 
     lua_pushstring(L,'ObjectType');
-    lua_pushinteger(L, addressData.ObjectType);
+    lua_pushinteger(L, addressData.typedata.ObjectType);
     lua_settable(L,-3);
 
     lua_pushstring(L,'ElementType');
-    lua_pushinteger(L, addressData.ElementType);
+    lua_pushinteger(L, addressData.typedata.ElementType);
     lua_settable(L,-3);
 
     lua_pushstring(L,'CountOffset');
-    lua_pushinteger(L, addressData.CountOffset);
+    lua_pushinteger(L, addressData.typedata.CountOffset);
     lua_settable(L,-3);
 
     lua_pushstring(L,'ElementSize');
-    lua_pushinteger(L, addressData.ElementSize);
+    lua_pushinteger(L, addressData.typedata.ElementSize);
     lua_settable(L,-3);
 
     lua_pushstring(L,'FirstElementOffset');
-    lua_pushinteger(L, addressData.FirstElementOffset);
+    lua_pushinteger(L, addressData.typedata.FirstElementOffset);
     lua_settable(L,-3);
 
     lua_pushstring(L,'ClassName');
-    lua_pushstring(L, addressData.ClassName);
+    lua_pushstring(L, addressData.typedata.ClassName);
     lua_settable(L,-3);
 
     lua_pushstring(L,'Fields');
-    lua_createtable(L, length(addressData.fields),0);
-    for i:=0 to length(addressData.Fields)-1 do
+    lua_createtable(L, length(addressData.typedata.fields),0);
+    for i:=0 to length(addressData.typedata.Fields)-1 do
     begin
       lua_pushinteger(L, i+1);
-      lua_createtable(L,0,3);
+      lua_createtable(L,0,4);
+
+      lua_pushstring(L,'Token');
+      lua_pushinteger(L, addressData.typedata.fields[i].token);
+      lua_settable(L,-3);
 
       lua_pushstring(L,'Offset');
-      lua_pushinteger(L, addressData.fields[i].offset);
+      lua_pushinteger(L, addressData.typedata.fields[i].offset);
       lua_settable(L,-3);
 
       lua_pushstring(L,'FieldType');
-      lua_pushinteger(L, addressData.fields[i].fieldtype);
+      lua_pushinteger(L, addressData.typedata.fields[i].fieldtype);
       lua_settable(L,-3);
 
       lua_pushstring(L,'Name');
-      lua_pushstring(L, addressData.fields[i].name);
+      lua_pushstring(L, addressData.typedata.fields[i].name);
+      lua_settable(L,-3);
+
+      lua_pushstring(L,'FieldTypeClassName');
+      lua_pushstring(L, addressData.typedata.fields[i].fieldTypeClassName);
+      lua_settable(L,-3);
+
+      lua_pushstring(L,'IsStatic');
+      lua_pushboolean(L, addressData.typedata.fields[i].IsStatic);
       lua_settable(L,-3);
 
 
@@ -364,6 +538,12 @@ begin
   luaclass_addClassFunctionToTable(L, metatable, userdata, 'enumModuleList', dotnetpipe_enumModuleList);
   luaclass_addClassFunctionToTable(L, metatable, userdata, 'enumTypeDefs', dotnetpipe_enumTypeDefs);
   luaclass_addClassFunctionToTable(L, metatable, userdata, 'getTypeDefMethods', dotnetpipe_getTypeDefMethods);
+  luaclass_addClassFunctionToTable(L, metatable, userdata, 'getTypeDefData', dotnetpipe_getTypeDefData);
+  luaclass_addClassFunctionToTable(L, metatable, userdata, 'getTypeDefParent', dotnetpipe_getTypeDefParent);
+
+  luaclass_addClassFunctionToTable(L, metatable, userdata, 'getMethodParameters', dotnetpipe_getMethodParameters);
+
+
   luaclass_addClassFunctionToTable(L, metatable, userdata, 'getAddressData', dotnetpipe_getAddressData);
   luaclass_addClassFunctionToTable(L, metatable, userdata, 'enumAllObjects', dotnetpipe_enumAllObjects);
 end;

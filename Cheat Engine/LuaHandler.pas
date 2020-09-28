@@ -124,7 +124,7 @@ uses autoassembler, MainUnit, MainUnit2, LuaClass, frmluaengineunit, plugin, plu
   LuaManualModuleLoader, pointervaluelist, frmEditHistoryUnit, LuaCheckListBox,
   LuaDiagram, frmUltimap2Unit, frmcodefilterunit, BreakpointTypeDef, LuaSyntax,
   LazLogger, LuaSynedit, LuaRIPRelativeScanner, LuaCustomImageList ,ColorBox,
-  rttihelper, LuaDotNetPipe;
+  rttihelper, LuaDotNetPipe, LuaRemoteExecutor;
 
   {$warn 5044 off}
 
@@ -9061,6 +9061,448 @@ end;
 
 
 
+function createExecuteMethodStub(L:PLua_state): integer; cdecl;
+(*
+assembles a function that takes a set parameter format and returns that address
+createExecuteCodeExStub(callmethod, address, {type=x} or param1,{type=x,value=param2} or param2,...)
+*)
+//callmethod:
+//0: stdcall
+//1: cdecl
+//other, not implemented yet
+//
+//timeout:
+//0: don't wait (no return value)
+//nil or -1: infinite
+//else time in milliseconds
+//
+//
+//paramtypes:
+//0: integer/pointer
+//1: float
+//2: double
+//3: asciistring (turns into 0:pointer after writing the string)
+//4: widestring
+//5: bytetable
+var
+  callmethod: integer;
+  address: ptruint;
+  paramcount: integer;
+
+  i,j: integer;
+
+  s: tstringlist;
+  valuetype: integer;
+
+  stackalloc: integer;
+
+  instancereg: integer=1;
+  regstr: string;
+
+  stackpointer: integer;
+
+  value: qword;
+
+
+  f: single;
+  floatdword: dword absolute f;
+  d: double;
+  doubleqword: qword absolute d;
+  z: PDwordArray;
+
+
+  sai: integer;
+  x: ptruint;
+  y,wr: dword;
+
+  stubaddress, resultaddress: ptruint;
+  allocs: TCEAllocArray;
+  exceptionlist: TCEExceptionListArray;
+
+  r: ptruint;
+  dontfree: boolean;
+   thread:thandle;
+
+
+
+  instanceSelector: TStringlist=nil;
+
+  valuesize: integer;
+  IsInputOnly, IsOutputOnly: boolean;
+
+  parameterlist: array of integer;
+begin
+  if lua_gettop(L)<3 then
+  begin
+    lua_pushnil(L);
+    lua_pushstring(L,'Not enough parameters. Minimum: callmethod, address, instance');
+    exit(2);
+  end;
+
+  paramcount:=lua_gettop(L)-3;
+
+  setlength(allocs,0);
+  setlength(exceptionlist,0);
+
+  callmethod:=lua_tointeger(L,1);
+  if callmethod>=2 then
+  begin
+    lua_pushnil(L);
+    lua_pushstring(L,'Invalid callmethod:'+inttostr(callmethod));
+    exit(2);
+  end;
+
+  address:=lua_toaddress(L,2);
+  setlength(parameterlist,0);
+
+  s:=tstringlist.create;
+
+  s.Add('allocXO(stub,4096,'+inttohex(address,8)+')');
+
+  s.add('stub:');
+
+  stackpointer:=0;
+
+  if processhandler.is64Bit then
+  begin
+    s.add('push rbp');
+    s.add('mov rbp,rsp');
+    //rbp=old rbp
+    //rbp+8=return address
+    //rbp+10=scratch space for param1
+    s.add('mov [rbp+10],rcx'); //store rcx(the parameters) in the scratch space for this function
+    s.add('mov rax,rcx');
+
+    stackalloc:=s.add('sub rsp,'+inttohex(align(max(4,paramcount)*8,$10),1))
+  end
+  else
+  begin
+    s.add('push ebp');
+    s.add('mov ebp,esp');
+    s.add('mov eax,[ebp+8]'); //ebp=old ebp, ebp+4=return address, ebp+8=parameter1
+
+    stackalloc:=s.add('sub esp,'+inttohex(paramcount*4,1));  //save this linenr in case doubles are used
+  end;
+
+  if lua_isnil(L,3)=false then  //check if instance is nil
+  begin
+    //instance is provided
+    if lua_istable(L,3) then
+    begin
+      //table
+      lua_pushstring(L,'regnr');
+      lua_gettable(L,3);
+      if lua_isnil(L,-1) then
+      begin
+        lua_pushinteger(L,1);
+        lua_gettable(L,3);
+        if not lua_isnil(L,-1) then
+          instancereg:=lua_tointeger(L,-1)
+        else
+          instancereg:=1; //assume the user used a table and left out the instancereg cause he wants ecx/rcx
+
+        lua_pop(L,1);
+      end
+      else
+        instanceReg:=lua_tointeger(L,-1);
+
+      lua_pop(L,1);
+    end
+    else
+      instanceReg:=1; //ECX/RCX
+
+    case instancereg of
+      0: regstr:='rax';
+      1:
+      begin
+        regstr:='rcx';
+        if processhandler.is64Bit then
+        begin
+          stackpointer:=1; //unlike 32-bit, in 64-bit method calls it's the first param
+        end;
+      end;
+      2: regstr:='rdx';
+      3: regstr:='rbx';
+      4: regstr:='rsp';
+      5: regstr:='rbp';
+      6: regstr:='rsi';
+      7: regstr:='rdi';
+      8: regstr:='r8';
+      9: regstr:='r9';
+      10: regstr:='r10';
+      11: regstr:='r11';
+      12: regstr:='r12';
+      13: regstr:='r13';
+      14: regstr:='r14';
+      15: regstr:='r15';
+    end;
+
+    if processhandler.is64Bit=false then
+    begin
+      if instancereg>=8 then raise exception.create('Invalid instance register');
+      regstr[1]:='e';
+    end;
+
+    instanceSelector:=tstringlist.Create;
+    if processhandler.is64bit then
+    begin
+      //this gets added right in front of the call instruction
+      instanceSelector.add('mov eax,[rbp+10]'); //get the address of the parameters
+      instanceSelector.add('mov '+regstr+',[rax]'); //the first parameter is the instance
+      s.add('add rax,8')  //rax now points to the first real parameter
+    end
+    else
+    begin
+      instanceSelector.add('mov eax,[ebp+8]');
+      instanceSelector.add('mov '+regstr+',[eax]');
+      s.add('add eax,4')  //eax now points to the first real parameter
+    end;
+
+    setlength(parameterlist, length(parameterlist)+1);
+    parameterlist[length(parameterlist)-1]:=0; //pointer
+  end;
+
+  try
+    //setup the types
+    for i:=4 to lua_gettop(L) do
+    begin
+      valuetype:=0;
+      valuesize:=0;
+      IsInputOnly:=false;
+      IsOutputOnly:=false;
+      if lua_istable(l,i) then
+      begin
+        lua_pushstring(L,'type');
+        lua_gettable(L,i);
+
+        if lua_isnil(L,-1) then
+          valuetype:=5
+        else
+          valuetype:=lua_tointeger(L,-1);
+
+        lua_pop(L,1);
+
+        if valuetype=5 then
+        begin
+          //check for a 'size' field, and a 'IsOutputOnly' or 'IsInputOnly'
+
+          lua_pushstring(L,'size');
+          lua_gettable(L,i);
+          if not lua_isnil(L,-1) then
+            valuesize:=lua_tointeger(L,-1);
+          lua_pop(L,1);
+
+          lua_pushstring(L, 'isOutputOnly');
+          lua_gettable(L,i);
+          if not lua_isnil(L,-1) then
+            IsOutputOnly:=lua_toboolean(L,-1);
+          lua_pop(L,1);
+
+          lua_pushstring(L, 'isInputOnly');
+          lua_gettable(L,i);
+          if not lua_isnil(L,-1) then
+            IsOutputOnly:=lua_toboolean(L,-1);
+          lua_pop(L,1);
+        end;
+      end
+      else
+      if lua_isinteger(L,i) then  //just typenumbers
+        valuetype:=lua_tointeger(L,i)
+      else
+      begin
+        lua_pushnil(L);
+        lua_pushstring(L,'Unknown type for param '+inttostr(i));
+        exit(2);
+      end;
+
+
+      case valuetype of
+        0,3,4,5:  //vt5 is a bytetable
+        begin
+          if processhandler.is64Bit then
+          begin
+            case stackpointer of
+              0: s.add('mov rcx,[rax+'+inttohex(stackpointer*8,2)+']');
+              1: s.add('mov rdx,[rax+'+inttohex(stackpointer*8,2)+']');
+              2: s.add('mov r8,[rax+'+inttohex(stackpointer*8,2)+']');
+              3: s.add('mov r9,[rax+'+inttohex(stackpointer*8,2)+']');
+              else
+              begin
+                s.add('mov rbx,[rax+'+inttohex(stackpointer*8,2)+']');
+                s.add('mov qword ptr [rsp+'+inttohex(stackpointer*8,8)+'],rbx');
+              end;
+            end;
+          end
+          else
+          begin
+            s.add('push [eax+'+inttohex(stackpointer*4,2)+']'); //could be faster with a rep movsd , or even use edi as a pointer, but meh
+          end;
+          inc(stackpointer);
+        end;
+
+        1: //float(single)
+        begin
+          if processhandler.is64Bit then
+          begin
+            if stackpointer<4 then
+            begin
+              s.add('movss xmm'+inttostr(stackpointer)+',[rax+'+inttohex(stackpointer*8,2)+']');
+            end
+            else
+            begin
+              s.add('mov rbx,[rax+'+inttohex(stackpointer*8,2)+']');
+              s.add('mov qword ptr [rsp+'+inttohex(stackpointer*8,8)+'],rbx');
+            end;
+          end
+          else
+          begin
+            s.add('mov ebx,[eax+'+inttohex(stackpointer*4,2)+']');
+            s.add('mov dword ptr [esp+'+inttohex(stackpointer*4,1)+'],ebx');
+          end;
+
+          inc(stackpointer);
+        end;
+
+        2: //double
+        begin
+          if processhandler.is64Bit then
+          begin
+            if stackpointer<4 then
+              s.add('movsd xmm'+inttostr(stackpointer)+',[rax+'+inttohex(stackpointer*8,2)+']')
+            else
+            begin
+              s.add('mov rbx,[rax+'+inttohex(stackpointer*8,2)+']');
+              s.add('mov qword ptr [rsp+'+inttohex(stackpointer*8,8)+'],rbx');
+            end;
+          end
+          else
+          begin
+            s.add('mov ebx,[eax+'+inttohex(stackpointer*4,2)+']');
+            s.add('mov dword ptr [esp+'+inttohex(stackpointer*4,1)+'],ebx');
+
+            inc(stackpointer);
+            s.add('mov ebx,[eax+'+inttohex(stackpointer*4,2)+']');
+            s.add('mov dword ptr [esp+'+inttohex(stackpointer*4,1)+'],ebx');
+          end;
+          inc(stackpointer);
+        end;
+
+
+
+        else
+        begin
+          lua_pushnil(L);
+          lua_pushstring(L,'Invalid parametertype '+inttostr(i+3)+'('+inttostr(valuetype)+')');
+          exit(2);
+        end;
+      end;
+
+
+
+
+      setlength(parameterlist, length(parameterlist)+1);
+      if valuetype=5 then //convert it to a native type
+      begin
+        valuetype:=(1 shl 31) or valuesize;
+        if IsOutputOnly then valuetype:=valuetype or (1 shl 30);
+        if IsInputOnly then valuetype:=valuetype or (1 shl 29);
+      end;
+      parameterlist[length(parameterlist)-1]:=valuetype;
+
+    end;
+
+    if processhandler.is64Bit=false then //fix the stack for the caller
+      s[stackalloc]:='sub esp,'+inttohex(stackpointer*4,1);
+
+    if instanceSelector<>nil then
+    begin
+      s.AddStrings(instanceSelector);
+      freeandnil(instanceSelector);
+    end;
+    s.add('call '+inttohex(address,8)); //ce will make it a 16 byte call if needed
+    if processhandler.is64Bit then
+    begin
+      s.add('add rsp,'+inttohex(align(max(4,paramcount)*8,$10),1));
+      s.add('pop rbp');
+      s.add('ret');
+    end
+    else
+    begin
+      if callmethod=1 then
+        s.add('add esp,'+inttohex(paramcount*4,1));
+
+      s.add('pop ebp');
+      s.add('ret 4');
+    end;
+
+    if autoassemble(s,false,true,false,false,allocs,exceptionlist) then
+    begin
+      //return a table describing this stub so it can be executed
+
+      //addressToCall
+      //paramlist (types)
+
+      lua_createtable(L,0,1);
+
+
+      for i:=0 to length(allocs)-1 do
+      begin
+        if  allocs[i].varname='stub' then
+        begin
+          lua_pushstring(L,'StubAddress');
+          lua_pushinteger(L,allocs[i].address);
+          lua_settable(L,-3);
+
+          lua_pushstring(L,'Parameters');
+          lua_createtable(L,0,length(parameterlist));
+          for j:=0 to length(parameterlist)-1 do
+          begin
+            lua_pushinteger(L,j+1);
+            lua_pushinteger(L, parameterlist[j]);
+            lua_settable(L,-3);
+          end;
+
+          lua_settable(L,-3);
+          break;
+        end;
+      end;
+
+
+      exit(1);
+
+
+
+
+    end
+    else
+      exit(0);
+  finally
+    s.free;
+  end;
+end;
+
+function createExecuteCodeExStub(L:PLua_state): integer; cdecl;
+var paramcount: integer;
+begin
+  paramcount:=lua_gettop(L);
+  if paramcount<2 then
+  begin
+    lua_pushnil(L);
+    lua_pushstring(L,'Not enough parameters. Minimum: callmethod, address');
+    exit(2);
+  end;
+
+  lua_pushnil(L);
+  lua_insert(L, 3); //instance=nil
+  exit(createExecuteMethodStub(L));
+end;
+
+
+function freeExecuteCodeExStub(L:PLua_state): integer; cdecl;
+begin
+  result:=0;
+end;
+
 function executeMethod(L:PLua_state): integer; cdecl; //executecodeex(callmethod, timeout, address, {instance},{param1},{param2},{param3},{...})
 //executeCodeEx(callmethod, timeout, address, {type=x,value=param1} or param1,{type=x,value=param2} or param2,...)
 
@@ -9394,6 +9836,7 @@ begin
             end
             else
             begin
+              s.add('xor rax,rax');
               s.add('mov eax,[floatvalue'+inttostr(stackpointer)+']');
               s.add('mov qword ptr [rsp+'+inttohex(stackpointer*8,8)+'],rax');
             end;
@@ -12161,7 +12604,7 @@ begin
     lua_settable(L,-3);
 
     lua_pushstring(L,'State');
-    lua_pushinteger(L,mbi.RegionSize);
+    lua_pushinteger(L,mbi.State);
     lua_settable(L,-3);
 
     lua_pushstring(L,'Protect');
@@ -12169,7 +12612,7 @@ begin
     lua_settable(L,-3);
 
     lua_pushstring(L,'Type');
-    lua_pushinteger(L,mbi.Protect);
+    lua_pushinteger(L,mbi._Type);
     lua_settable(L,-3);
 
     lua_settable(L,-3);
@@ -12434,6 +12877,28 @@ begin
   exit(1);
 end;
 
+function lua_extractFileName(L: Plua_State): integer; cdecl;
+begin
+  if lua_gettop(L)>=1 then
+  begin
+    lua_pushstring(L, ExtractFileName(Lua_ToString(L,1)));
+    exit(1);
+  end
+  else
+    exit(0);
+end;
+
+function lua_extractFilePath(L: Plua_State): integer; cdecl;
+begin
+  if lua_gettop(L)>=1 then
+  begin
+    lua_pushstring(L, ExtractFilePath(Lua_ToString(L,1)));
+    exit(1);
+  end
+  else
+    exit(0);
+end;
+
 function lua_split(L: Plua_State): integer; cdecl;
 var
   s: string;
@@ -12456,6 +12921,7 @@ begin
     result:=length(arr);
   end;
 end;
+
 
 procedure InitializeLua;
 var
@@ -12997,6 +13463,10 @@ begin
     lua_register(L, 'executeCodeEx', executeCodeEx);
     lua_register(L, 'executeMethod', executeMethod);
 
+    lua_register(L, 'createExecuteMethodStub', createExecuteMethodStub);
+    lua_register(L, 'createExecuteCodeExStub', createExecuteCodeExStub);
+
+
 
     lua_register(L, 'executeCodeLocal', executeCodeLocal);
     lua_register(L, 'executeCodeLocalEx', executeCodeLocalEx);
@@ -13118,7 +13588,8 @@ begin
 
     lua_register(L, 'getAutoRunPath', lua_getAutoRunPath);
     lua_register(L, 'getAutorunPath', lua_getAutoRunPath);
-
+    lua_register(L, 'extractFileName', lua_extractFileName);
+    lua_register(L, 'extractFilePath', lua_extractFilePath);
 
 
     initializeLuaRemoteThread;
@@ -13172,8 +13643,7 @@ begin
     initializeLuaSynEdit;
     initializeLuaCustomImageList;
     initializeLuaDotNetPipe;
-
-
+    InitializeLuaRemoteExecutor;
 
 
 

@@ -12,9 +12,7 @@ end
 function ceshare.QueryProcessCheats(processname, headermd5, updatableOnly)
   local modulelist=ceshare.enumModules2()
   local result=nil
-  --local url=ceshare.base..'QueryProcessCheats.php'
   local parameters='processname='..ceshare.url_encode(processname)
-  --print(url..'?'..parameters)
   
   if isKeyPressed(VK_CONTROL)==false then  --control lets you get a new script if needed
     local secondaryIdentifierCode=ceshare.secondaryIdentifierCode.Value[processname:lower()]
@@ -188,12 +186,13 @@ function ceshare.QueryCurrentProcess(updatableOnly)
   end
 end
 
-function ceshare.CheckForCheatsClick(s)
+function ceshare.CheckForCheatsClick(s, overrideProcess)
   --spawn the cheatbrowser
   
   if ceshare.CheatBrowserFrm==nil then
     local f=createFormFromFile(ceshare.formpath..'BrowseCheats.FRM')
     f.lblProcessName.Caption=process
+    f.Name='ceshare_CheatBrowserFrm'
 
     ceshare.CheatBrowserFrm=f
 
@@ -202,7 +201,12 @@ function ceshare.CheckForCheatsClick(s)
     f.pnlDescription.Constraints.MinHeight=h
     
     --configure base state and add events
+    
+    ceshare.CheatBrowserFrm.OnDestroy=function(f)
+      f.saveFormPosition({ceshare.CheatBrowserFrm.CEPanel1.Height})
+    end
 
+    ceshare.CheatBrowserFrm.lvCheats.Font.Size=12
     ceshare.CheatBrowserFrm.lvCheats.OnSelectItem=function(sender, listitem, selected)
       if selected and listitem.index then
         local desc=ceshare.CurrentQuery[listitem.index+1].Description
@@ -217,7 +221,7 @@ function ceshare.CheckForCheatsClick(s)
         end--]]
         
         ceshare.CheatBrowserFrm.lblContact.Visible=true
-        ceshare.CheatBrowserFrm.lblContact.Font.Size=6
+        ceshare.CheatBrowserFrm.lblContact.Font.Size=7
       end
       
       ceshare.RateStars[1].img.OnMouseLeave(ceshare.RateStars[1]) 
@@ -576,11 +580,28 @@ function ceshare.CheckForCheatsClick(s)
     ceshare.linkButton=createPNG()
     ceshare.linkButton.LoadFromFile(ceshare.imagepath..'link.png')
     
+    local formdata
+    ceshare.CheatBrowserFrm.loadedFormPosition, formdata=ceshare.CheatBrowserFrm.loadFormPosition()
+    if ceshare.CheatBrowserFrm.loadedFormPosition then
+      if #formdata>=1 then    
+        ceshare.CheatBrowserFrm.CEPanel1.Height=formdata[1]   
+      end
+    else    
+      ceshare.CheatBrowserFrm.Position='poScreenCenter'
+      ceshare.CheatBrowserFrm.CEPanel1.Height=(getScreenDPI()/96)*100
+    end
+  
   end
 
   --get the table list
   ceshare.CheatBrowserFrm.lvCheats.clear()
-  ceshare.CurrentQuery=ceshare.QueryCurrentProcess()
+  
+  if overrideProcess==nil then
+    ceshare.CurrentQuery=ceshare.QueryCurrentProcess()
+  else  
+    local headermd5=ceshare.getCurrentProcessHeaderMD5() or '00000000000000000000000000000000'         
+    ceshare.CurrentQuery=ceshare.QueryProcessCheats(overrideProcess, headermd5)
+  end
 
   if ceshare.CurrentQuery==nil or #ceshare.CurrentQuery==0 then
     messageDialog(translate('Sorry, but there are currently no tables for this target. Perhaps you can be the first'),mtError,mbOK)
@@ -662,17 +683,23 @@ function ceshare.CheckForCheatsClick(s)
       
       if w<neededw then
         ceshare.CheatBrowserFrm.lvCheats.Columns[i].Autosize=false
-        ceshare.CheatBrowserFrm.lvCheats.Columns[i].Width=neededw
+        ceshare.CheatBrowserFrm.lvCheats.Columns[i].Width=neededw        
         w=neededw
       end
         
       headerwidth=headerwidth+w    
     end
     
-    ceshare.CheatBrowserFrm.ClientWidth=headerwidth+10
+    
+    
+    if not ceshare.CheatBrowserFrm.loadedFormPosition then
+      ceshare.CheatBrowserFrm.ClientWidth=headerwidth+10      
+    end
+    
+    
     ceshare.CheatBrowserFrmShownBefore=true
   end
 
-  ceshare.CheatBrowserFrm.Position='poScreenCenter'
+
 end
 

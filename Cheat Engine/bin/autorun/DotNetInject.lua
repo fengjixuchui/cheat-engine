@@ -16,10 +16,11 @@ alloc(RuntimeHost,8)
 alloc(paramstr,256)
 alloc(methodname,256)
 alloc(classname,256)
-alloc(dllpath,256)
+alloc(dllpath,512)
 
 alloc(returnvalue,4)
 alloc(errorvalue,4)
+label(error)
 
 dllpath:
 dw '%s',0
@@ -82,7 +83,7 @@ mov [errorvalue],eax
 
 error:
 [64-bit]
-sub rsp,6*8+8
+add rsp,6*8+8
 ret
 [/64-bit]
 
@@ -107,6 +108,9 @@ dealloc(errorvalue)
 
 ]]
 
+
+----------------------dot net---------------------------------------
+
 local DotNetStandardInjectScript=[[
 [enable]
 alloc(injectdotnetdll,4096)
@@ -130,7 +134,9 @@ alloc(rti_started,4)
 alloc(paramstr,256)
 alloc(methodname,256)
 alloc(classname,256)
-alloc(dllpath,256)
+alloc(dllpath,512)
+label(error)
+label(RuntimeEnumLoop)
 
 errorvalue:
 dd ffffffff //ffffffff= it never even got to the execute part
@@ -185,7 +191,7 @@ mov rax,[rcx]
 mov rdx,-1
 mov r8,RuntimeEnum
 call [rax+6*8] //EnumerateLoadedRuntimes
-[/64-bit
+[/64-bit]
 
 [32-bit]
 mov ecx,[metahost]
@@ -339,7 +345,7 @@ dealloc(dllpath)
 
 ]]
 
-function injectDotNetDLL(path, classname, methodname, parameter)
+function injectDotNetDLL(path, classname, methodname, parameter, timeout)
 
   local m=enumModules()
   local isDotNetCore=false
@@ -349,56 +355,51 @@ function injectDotNetDLL(path, classname, methodname, parameter)
     if uppername=='MSCOREE.DLL' then
       if getAddressSafe('MSCOREE.CLRCreateInstance') then
         isDotNetStandard=true
-      end      
+      end
     end
-    
+
     if uppername=='CORECLR.DLL' then
       if getAddressSafe('CORECLR.GetCLRRuntimeHost') then
         isDotNetCore=true
-      end         
+      end
     end
   end
-  
+
   local script
   if isDotNetCore then
-    script=DotNetCoreInjectScript  
+    script=DotNetCoreInjectScript
   elseif isDotNetStandard then
     script=DotNetStandardInjectScript
   else
-    return nil,-4 --no dotnet architecture detected  
+    return nil,-4 --no dotnet architecture detected
   end
-  
-  
+
+
   local script=string.format(script,path, classname, methodname, parameter)
-  local status, disableInfo=autoAssemble(script)
-  
+  status, disableInfo=autoAssemble(script)
+
   if status then
-    local returnValue=readInteger(disableInfo.allocs.returnvalue)    
-    local errorValue=readInteger(disableInfo.allocs.errorvalue)  
-    autoAssemble(script, disableInfo)   
-    
+    local returnValue=readInteger(disableInfo.allocs.returnvalue.address)
+    local errorValue=readInteger(disableInfo.allocs.errorvalue.address)
+    autoAssemble(script, disableInfo)
+
     if errorValue==nil then
-      return nil,-3   --target crashed...      
+      return nil,-3   --target crashed...
     end
-    
+
     if errorValue~=0 then --not a successful load
       if errorValue==0xffffffff then
         return nil, -2 --failed getting to the execute part
       else
         return nil, errorValue --execution gave this error (ntstatus)
       end
-    end    
+    end
 
     return returnValue
   else
     return nil,-1
-  end  
-  
+  end
+
 end
 
-
-
-
-
-
-
+injectDotNetLibrary=injectDotNetDLL

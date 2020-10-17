@@ -815,36 +815,39 @@ function LUA_onBreakpoint(threadid: dword; context: PContext; functionAlreadyPus
 var p: integer;
 begin
   result:=false;
+  if context=nil then exit;
+
   try
-    LUA_SetCurrentContextState(threadid, context);
+    try
+      LUA_SetCurrentContextState(threadid, context);
 
-
-    if not functionAlreadyPushed then
-    begin
-      lua_pop(LuaVM, lua_gettop(luavm)); //clear it just to be sure
-
-      lua_getglobal(luavm, pchar('debugger_onBreakpoint'));
-      p:=lua_gettop(luavm);
-      if p=0 then exit;
-    end;
-
-    if lua_isfunction(luavm, -1) then //extra check
-    begin
-      if lua_pcall(LuaVM, 0, 1, 0)=0 then
+      if not functionAlreadyPushed then
       begin
+        lua_pop(LuaVM, lua_gettop(luavm)); //clear it just to be sure
+
+        lua_getglobal(luavm, pchar('debugger_onBreakpoint'));
         p:=lua_gettop(luavm);
-
-        if (p=1) then //only 1 parameter returned
-          result:=lua_tointeger(luavm, -1)<>0;  //return the result is not 0
-
-
-        lua_pop(LuaVM, lua_gettop(luavm)); //clear stack
-
-        //set new state if changes where made
-        LUA_GetNewContextState(context);
+        if p=0 then exit;
       end;
-    end;
 
+      if lua_isfunction(luavm, -1) then //extra check
+      begin
+        if lua_pcall(LuaVM, 0, 1, 0)=0 then
+        begin
+          p:=lua_gettop(luavm);
+
+          if (p=1) then //only 1 parameter returned
+            result:=lua_tointeger(luavm, -1)<>0;  //return the result is not 0
+
+
+          lua_pop(LuaVM, lua_gettop(luavm)); //clear stack
+
+          //set new state if changes where made
+          LUA_GetNewContextState(context);
+        end;
+      end;
+    except
+    end;
   finally
     lua_pop(LuaVM, lua_gettop(luavm));
   end;
@@ -3648,23 +3651,40 @@ end;
 function messageDialog(L: PLua_State): integer; cdecl;
 var
   parameters: integer;
-  message: pchar;
-  dialogtype: integer;
+  message: string;
+  title: string;
+  dialogtype: TMsgDlgType;
   buttontype: integer;
 
   r: integer;
 
   i: integer;
   b: TMsgDlgButtons;
+
+  dialogtypeindex: integer;
 begin
   result:=0;
   parameters:=lua_gettop(L);
   if parameters>=3 then
   begin
-    message:=lua.lua_tostring(L,-parameters);
-    dialogtype:=lua_tointeger(L,-parameters+1);
+
+    title:='';
+    if lua_type(L,2)=LUA_TSTRING then
+    begin
+      dialogtypeindex:=3;
+      title:=Lua_ToString(L,1);
+      message:=lua_tostring(L,2);
+    end
+    else
+    begin
+      message:=lua_tostring(L,1);
+      dialogtypeindex:=2;
+    end;
+
+    dialogtype:=TMsgDlgType(lua_tointeger(L,dialogtypeindex));
+
     b:=[];
-    for i:=-parameters+2 to -1 do
+    for i:=dialogtypeindex+1 to parameters do
     begin
       buttontype:=lua_tointeger(L,i);
       case buttontype of
@@ -3685,7 +3705,12 @@ begin
     end;
     lua_pop(L, parameters);
 
-    r:=ce_messageDialog_lua(message, dialogtype, b);
+
+    if dialogtypeindex=3 then
+      r:=messageDlg(title,string(message),dialogtype,b,0)
+    else
+      r:=messageDlg(message, dialogtype, b,0);
+
     lua_pushinteger(L,r);
     result:=1;
 
@@ -7924,13 +7949,25 @@ begin
 end;
 
 function lua_createClass(L: PLua_State): integer; cdecl;
-var classname: string;
+var
+  classname: string;
+  c: TPersistentClass;
 begin
   result:=0;
   if lua_gettop(L)=1 then
   begin
     classname:=Lua_ToString(L,1);
-    luaclass_newClass(L, GetClass(classname).Create);
+
+    c:=GetClass(classname);
+
+    if c=nil then
+    begin
+      lua_pushnil(L);
+      lua_pushstring(L,Classname+' is not available');
+      exit(2);
+    end;
+
+    luaclass_newClass(L, c.Create);
     result:=1;
   end;
 end;
@@ -7939,13 +7976,24 @@ function lua_createComponentClass(L: PLua_State): integer; cdecl;
 var
   classname: string;
   owner: TComponent;
+
+  c: TPersistentClass;
 begin
   result:=0;
   if lua_gettop(L)=2 then
   begin
     classname:=Lua_ToString(L,1);
+    c:=GetClass(classname);
+
+    if c=nil then
+    begin
+      lua_pushnil(L);
+      lua_pushstring(L,Classname+' is not available');
+      exit(2);
+    end;
+
     owner:=lua_ToCEUserData(L,2);
-    luaclass_newClass(L, TComponentClass(GetClass(classname)).Create(owner));
+    luaclass_newClass(L, TComponentClass(c).Create(owner));
     result:=1;
   end;
 end;
@@ -12922,6 +12970,21 @@ begin
   end;
 end;
 
+function lua_registerLuaFunctionHighlight(L: Plua_State): integer; cdecl;
+begin
+  if luasyntaxStringHashList<>nil then
+    luasyntaxStringHashList.Add(Lua_ToString(L,-1));
+
+  result:=0;
+end;
+
+function lua_unregisterLuaFunctionHighlight(L: Plua_State): integer; cdecl;
+begin
+  if luasyntaxStringHashList<>nil then
+    luasyntaxStringHashList.Remove(Lua_ToString(L,-1));
+
+  result:=0;
+end;
 
 procedure InitializeLua;
 var
@@ -13591,6 +13654,8 @@ begin
     lua_register(L, 'extractFileName', lua_extractFileName);
     lua_register(L, 'extractFilePath', lua_extractFilePath);
 
+    lua_register(L, 'registerLuaFunctionHighlight', lua_registerLuaFunctionHighlight);
+    lua_register(L, 'unregisterLuaFunctionHighlight', lua_unregisterLuaFunctionHighlight);
 
     initializeLuaRemoteThread;
 
@@ -13733,9 +13798,14 @@ begin
       s.add('math.mod=math.fmod');
       s.add('string.gfind=string.gmatch');
 
-
       s.add('BinUtils={}');
+      s.add('math.randomseed(os.time())');
 
+      lua_doscript(s.text);
+
+      s.clear;
+      s.add('function printf(...) print(string.format(...)) end');
+      s.add('registerLuaFunctionHighlight("printf")');
       lua_doscript(s.text);
 
       lua_getglobal(L, 'string');

@@ -346,7 +346,10 @@ type
     sdImageList: TImageList;
     miCommonalityScan: TMenuItem;
     MenuItem5: TMenuItem;
-    MenuItem6: TMenuItem;
+    miFindValue: TMenuItem;
+    miFindNext: TMenuItem;
+    miFindPrevious: TMenuItem;
+    miGoToOffset: TMenuItem;
     MenuItem7: TMenuItem;
     MenuItem8: TMenuItem;
     miSeperatorCommonalityScanner: TMenuItem;
@@ -444,9 +447,13 @@ type
     procedure FindDialog1Find(Sender: TObject);
     procedure HeaderControl1SectionResize(HeaderControl: TCustomHeaderControl;
       Section: THeaderSection);
+    procedure HeaderControl1SectionSeparatorDblClick(HeaderControl: TCustomHeaderControl; Section: THeaderSection);
     procedure MenuItem3Click(Sender: TObject);
     procedure MenuItem5Click(Sender: TObject);
-    procedure MenuItem6Click(Sender: TObject);
+    procedure miFindValueClick(Sender: TObject);
+    procedure miFindNextClick(Sender: TObject);
+    procedure miFindPreviousClick(Sender: TObject);
+    procedure miGoToOffsetClick(Sender: TObject);
     procedure miBackClick(Sender: TObject);
     procedure miDefineNewStructureFromDebugDataClick(Sender: TObject);
     procedure miExpandAllClick(Sender: TObject);
@@ -535,6 +542,8 @@ type
 
     fOnStatusbarUpdate: TNotifyEvent;
 
+    goToOffsetHistory: TStringList;
+
     procedure updateStatusbar;
     procedure UpdateCurrentStructOptions;
     procedure setupColors;
@@ -598,6 +607,8 @@ type
     procedure onStructureDelete(sender: TDissectedStruct);
 
     procedure FixPositions;
+
+    function GetNodeSectionWidth(const showAddress: boolean; const node: TTreeNode; var Section: THeaderSection): Integer;
   published
     property DefaultColor: TColor read fDefaultColor;
     property MatchColor: TColor read fMatchColor;
@@ -632,11 +643,14 @@ implementation
 uses MainUnit, mainunit2, frmStructures2ElementInfoUnit, MemoryBrowserFormUnit,
   frmStructureLinkerUnit, frmgroupscanalgoritmgeneratorunit, frmStringPointerScanUnit,
   ProcessHandlerUnit, Parsers, LuaCaller, frmRearrangeStructureListUnit,
-  frmstructurecompareunit, frmDebugSymbolStructureListUnit, rttihelper;
+  frmstructurecompareunit, frmDebugSymbolStructureListUnit, rttihelper, inputboxtopunit;
 
 resourcestring
   rsAddressValue = 'Address: Value';
   rsUndefined = 'undefined';
+
+  rsGotoOffset = 'Go to Offset';
+  rsFillInTheOffsetYouWantToGoTo = 'Fill in the Offset you want to go to';
 
   rsThisIsQuiteABigStructureHowManyBytesDoYouWantToSav = 'This is quite a big '
      +'structure. How many bytes do you want to save?';
@@ -1485,6 +1499,7 @@ begin
       j := 100; //structures (Terraria's tiles, eg, are 2*10^9 elements) and it's either too slow or not possible to diagram
     for i:=0 to j-1 do
     begin
+
       e:=addElement(data.typedata.classname + '['+inttostr(i)+']', data.typedata.firstelementoffset+i*data.typedata.elementsize, vtPointer);
       case data.typedata.elementtype of
         ELEMENT_TYPE_END            : e.VarType:=vtDword;
@@ -1516,6 +1531,8 @@ begin
     try
       for i:=0 to length(data.typedata.fields)-1 do
       begin
+        if data.typedata.fields[i].isStatic then continue;
+
         e:=addElement(data.typedata.fields[i].name, data.typedata.fields[i].offset);
 
         e.DisplayMethod:=dtUnSignedInteger;
@@ -3160,6 +3177,10 @@ begin
 
   if frmStructuresNewStructure<>nil then
     freeandnil(frmStructuresNewStructure);
+
+  if goToOffsetHistory<>nil then
+    freeandnil(goToOffsetHistory);
+
 end;
 
 procedure TfrmStructures2.FormCreate(Sender: TObject);
@@ -3197,6 +3218,8 @@ begin
       HeaderControl1.Sections[0].Width:=x[2];
     end;
   end;
+
+  goToOffsetHistory:=TStringList.create;
 
 
   setupColors; //load colors and default struct options
@@ -3241,6 +3264,74 @@ begin
 
   HeaderControl.Left:=-tvStructureView.scrolledleft;
 //  self.FixPositions;
+end;
+
+procedure TfrmStructures2.HeaderControl1SectionSeparatorDblClick(HeaderControl: TCustomHeaderControl; Section: THeaderSection);
+var
+  maxWidth,index,nodeWidth:Integer;
+  node:TTreeNode;
+  showAddress: boolean;
+begin
+
+  showAddress:=miShowAddresses.checked;
+
+  if tvStructureView.items.count>0 then
+  begin
+
+    maxWidth:=0;
+
+    for index:=0 to tvStructureView.items.count-1 do
+    begin
+
+      node:=tvStructureView.items[index];
+
+      nodeWidth:=GetNodeSectionWidth(showAddress, node, Section);
+
+      maxWidth:=Max(maxWidth,nodeWidth);
+
+    end;
+
+    Section.Width:=maxWidth+10;
+  end;
+end;
+
+function TfrmStructures2.GetNodeSectionWidth(const showAddress: boolean; const node: TTreeNode; var Section: THeaderSection): Integer;
+var
+  sectionColumn: TStructColumn;
+  stringValue: string;
+  structElement: TStructelement;
+  textrect: trect;
+begin
+
+  structElement:=getStructElementFromNode(node);
+
+  if Section.Index=0 then
+  begin
+
+    stringValue:=getDisplayedDescription(structElement);
+
+    textrect:=node.DisplayRect(true);
+
+    Result:=textrect.left+tvStructureView.Canvas.TextWidth(stringValue);
+
+  end
+  else
+  begin
+
+    setCurrentNodeStringsInColumns(node,structElement);
+
+    sectionColumn:=columns[Section.Index-1];
+
+    if showAddress then
+      stringValue:=sectionColumn.currentNodeAddress
+    else
+      stringValue:='';
+
+    stringValue:=stringValue+sectionColumn.currentNodeValue;
+
+    Result:=tvStructureView.Canvas.TextWidth(stringValue);
+
+  end;
 end;
 
 procedure TfrmStructures2.HeaderControl1SectionTrack(
@@ -5381,9 +5472,94 @@ begin
   end;
 end;
 
-procedure TfrmStructures2.MenuItem6Click(Sender: TObject);
+procedure TfrmStructures2.miFindValueClick(Sender: TObject);
 begin
-  finddialog1.Execute;
+  finddialog1.Options:=finddialog1.Options-[frFindNext];
+  if finddialog1.Execute then
+  begin
+    mifindNext.visible:=true;
+    mifindPrevious.visible:=true;
+  end;
+end;
+
+procedure TfrmStructures2.miFindNextClick(Sender: TObject);
+begin
+  finddialog1.Options:=finddialog1.Options+[frFindNext];
+  finddialog1.OnFind(finddialog1);
+end;
+
+procedure TfrmStructures2.miFindPreviousClick(Sender: TObject);
+begin
+  // Reverse Search Direction
+  if (frDown in finddialog1.Options) then
+  begin
+    finddialog1.Options:=finddialog1.Options-[frDown];
+  end
+  else
+  begin
+    finddialog1.Options:=finddialog1.Options+[frDown];
+  end;
+
+  finddialog1.Options:=finddialog1.Options+[frFindNext];
+  finddialog1.OnFind(finddialog1);
+
+  // Change Search Direction back to original
+  if (frDown in finddialog1.Options) then
+  begin
+    finddialog1.Options:=finddialog1.Options-[frDown];
+  end
+  else
+  begin
+    finddialog1.Options:=finddialog1.Options+[frDown];
+  end;
+end;
+
+procedure TfrmStructures2.miGoToOffsetClick(Sender: TObject);
+var
+  newOffsetString: string;
+  newOffset: ptrUint;
+  index,indexLast: integer;
+  canceled: boolean;
+  struct: TDissectedStruct;
+  structElement: TStructElement;
+  node: TTreenode;
+begin
+
+  node:=tvStructureView.GetLastMultiSelected;
+
+  structElement:=getStructElementFromNode(node);
+
+  newOffsetString:=inputboxtop(rsGotoOffset, rsFillInTheOffsetYouWantToGoTo, IntTohex(structElement.Offset, 4), true, canceled, goToOffsetHistory);
+
+  if(canceled)then
+    exit;
+
+  newOffset:= symhandler.getAddressFromName(newOffsetString);
+
+  struct:=structElement.parent;
+
+  indexLast:=0;
+
+  for index:=0 to struct.getElementCount-1 do
+  begin
+    structElement:=struct.getElement(index);
+
+    if (structElement.Offset > newOffset) then
+      break;
+
+    if (structElement.Offset <= newOffset) and (newOffset < (structElement.Offset+structElement.Bytesize)) then
+    begin
+      tvStructureView.Items.SelectOnlyThis(node.parent.items[index]);
+      exit;
+    end;
+
+    if (structElement.Offset <= newOffset) then
+      indexLast:=index;
+  end;
+
+  if (0 <= indexLast) and (indexLast < node.parent.Count) then
+    tvStructureView.Items.SelectOnlyThis(node.parent.items[indexLast]);
+
 end;
 
 procedure TfrmStructures2.miBackClick(Sender: TObject);

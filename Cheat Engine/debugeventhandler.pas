@@ -8,7 +8,7 @@ interface
 
 uses
   {$ifdef darwin}
-  macport, lclproc,
+  macport,
   {$endif}
   {$ifdef windows}
   jwawindows, Windows, win32proc,
@@ -16,7 +16,7 @@ uses
   Classes, SysUtils, syncobjs, GuiSafeCriticalSection,
   disassembler, CEFuncProc, newkernelhandler,debuggertypedefinitions, frmTracerUnit,
   DebuggerInterfaceAPIWrapper, lua, lauxlib, lualib,
-  tracerIgnore, BreakpointTypeDef;
+  tracerIgnore, BreakpointTypeDef, LCLProc;
 
 type
   TContextFields=(cfAll,cfDebug, cfRegisters, cfFloat);
@@ -163,7 +163,8 @@ uses foundcodeunit, DebugHelper, MemoryBrowserFormUnit, frmThreadlistunit,
      WindowsDebugger, VEHDebugger, KernelDebuggerInterface, NetworkDebuggerInterface,
      frmDebugEventsUnit, formdebugstringsunit, symbolhandler,
      networkInterface, networkInterfaceApi, ProcessHandlerUnit, globals,
-     UnexpectedExceptionsHelper, frmcodefilterunit, frmBranchMapperUnit, LuaHandler;
+     UnexpectedExceptionsHelper, frmcodefilterunit, frmBranchMapperUnit, LuaHandler,
+     LazLogger, Dialogs;
 
 resourcestring
   rsDebugHandleAccessViolationDebugEventNow = 'Debug HandleAccessViolationDebugEvent now';
@@ -246,11 +247,21 @@ begin
   TDebuggerthread(debuggerthread).execlocation:=411;
 
 
+  try
+    if (currentbp<>nil) and (assigned(currentbp.OnBreakpoint)) then
+      WaitingToContinue:=currentbp.OnBreakpoint(currentbp, context)
+    else
+      WaitingToContinue:=not lua_onBreakpoint(Self.ThreadId, context);
 
-  if (currentbp<>nil) and (assigned(currentbp.OnBreakpoint)) then
-    WaitingToContinue:=currentbp.OnBreakpoint(currentbp, context)
-  else
-    WaitingToContinue:=not lua_onBreakpoint(Self.ThreadId, context);
+  except
+    on e:exception do
+    begin
+      DebugLn('Exception '+e.Message);
+
+      showmessage('Debugger error while handling lua callbacks:'+e.Message);
+      DumpExceptionBackTrace;
+    end;
+  end;
 
   TDebuggerthread(debuggerthread).execlocation:=412;
 
@@ -887,7 +898,7 @@ begin
 
 
   //synchronize(VisualizeBreak);
-  //go to sleep and wait for an event that wakes it up. No need to worry about deleted breakpoints, since the cleanup will not be called untill this routine exits
+  //go to sleep and wait for an event that wakes it up. No need to worry about deleted breakpoints, since the cleanup will not be called until this routine exits
   TDebuggerthread(debuggerthread).synchronize(TDebuggerthread(debuggerthread), VisualizeBreak);
 
   if WaitingToContinue then

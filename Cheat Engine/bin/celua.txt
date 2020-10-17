@@ -98,8 +98,8 @@ extendedToByteTable(number): {}      - Converts an extended to a bytetable
 stringToByteTable(string): {}        - Converts a string to a bytetable
 wideStringToByteTable(string): {}    - Converts a string to a widestring and converts that to a bytetable
 
-byteTableToWord(table): number       - Converts a bytetable to a word
-byteTableToDword(table): number      - Converts a bytetable to a dword
+byteTableToWord(table, OPTIONAL signed:boolean): number       - Converts a bytetable to a word
+byteTableToDword(table, OPTIONAL signed:boolean): number      - Converts a bytetable to a dword
 byteTableToQword(table): number      - Converts a bytetable to a qword
 byteTableToFloat(table): number      - Converts a bytetable to a float
 byteTableToDouble(table): number     - Converts a bytetable to a double
@@ -214,6 +214,10 @@ registerAutoAssemblerCommand(command, function(parameters, syntaxcheckonly)): Re
 unregisterAutoAssemblerCommand(command)
 
 
+registerLuaFunctionHighlight(functionname): Makes the lua highlighter show the functionname as a functionkeyword
+unregisterLuaFunctionHighlight(functionname): Removes the given name from showing up as a functionkeyword
+
+
 registerSymbolLookupCallback(function(string):integer, location): ID  6.4+
   Registers a function to be called when a a symbol is parsed
   Location determines at what part of the symbol lookup the function is called
@@ -305,6 +309,8 @@ inputQuery(caption, prompt, initialstring): Shows a dialog where the user can in
 showSelectionList(title, caption, stringlist, allowCustomInput OPTIONAL): integer,string - Shows a menu with the given list. It returns the linenumber (starting at 0) and the selected string.  Linenumber is -1 if the user was allowed to enter custom input
 
 messageDialog(text, type, buttons...) : pops up a messagebox with a specific icon/sound with the specified buttons (mbok, mbyes, ....)
+messageDialog(title, text, type, buttons...): ^ but adds a custom title
+
 sleep(milliseconds): pauses for the number of specified milliseconds (1000= 1 sec...)
 
 getProcesslist(Strings): Fills a Strings inherited object with the processlist of the system. Format: %x-pidname
@@ -409,6 +415,8 @@ speedhack_getSpeed(): Returns the last set speed
 
 injectDLL(filename, skipsymbolreloadwait OPTIONAL): Injects a dll or dylib, and returns true on success
 injectLibrary(filepath, skipsymbolreloadwait OPTIONAL): Same as injectDLL, just sounds better
+
+injectDotNetDLL(dllpath, FullClassName, MethodName,parameterstring)
 
 executeCode(address, parameter OPTIONAL, timeout OPTIONAL) : address - Executes a stdcall function with 1 parameter at the given address in the target process  and wait for it to return. The return value is the result of the function that was called
 executeCodeLocal(addres, parameter OPTIONAL): address -  Executes a stdcall function with 1 parameter at the given address in the target process. The return value is the result of the function that was called
@@ -554,6 +562,8 @@ playSound(tablefile, waittilldone OPTIONAL) : Takes the memorystream from the ta
 speak(text, waittilldone OPTIONAL): Speaks a given text.  If waitTillDone is true the thread it's in will be frozen till it is done
 speak(text, flags): Speaks a given text using the given flags. https://msdn.microsoft.com/en-us/library/speechplatform_speakflags.aspx
 speakEnglish(text, waittilldone OPTIONAL) - will try the English voice by wrapping the given text into an XML statement specifying the english voice. Will not say anything if no Egnlish language is present. Do not use SPF_IS_NOT_XML flag and SPF_PARSE_SSML won't work in this situation
+
+printf(...) : Same as print(string.format(...))
 
 getUserRegistryEnvironmentVariable(name): string - Returns the environment variable stored in the user registry environment
 setUserRegistryEnvironmentVariable(name, string) - Sets the environment variable stored in the user registry environment
@@ -844,8 +854,8 @@ methods:
   doClick():  Executes the current function under onClick
   bringToFront(): Changes the z-order of the control so it'd at the top
   sendToBack(): Changes the z-order of the control so it'd at the back
-  screenToClient(): Converts screen x,y coordinates to x,y coordinates on the control
-  clientToScreen(): Converts control x,y coordinates to screen coordinates
+  screenToClient(x,y): Converts screen x,y coordinates to x,y coordinates on the control
+  clientToScreen(x,y): Converts control x,y coordinates to screen coordinates
 
 GraphicsObject : (GraphicsObject->Object)
 
@@ -1572,6 +1582,7 @@ methods
   expand(recursive:boolean=TRUE OPTIONAL) : Expands the given node
   collapse(recursive:boolean=TRUE OPTIONAL)  : collapses the given node
   getNextSibling(): Returns the treenode object that's behind this treenode on the same level
+  getDisplayRect(TextOnly: Boolean=FALSE OPTIONAL): Returns a rect {Left,Top,Right,Bottom} describing the node
   add(text:string): Returns a Treenode object that is a child of the treenode used to create it
 
 
@@ -1830,7 +1841,13 @@ createColorBox(owner) - Creates a new colorbox
 
 
 FindDialog Class: (Inheritance: CommonDialog->Component->Object)
+createFindDialog(owner)
+
 properties
+  Top
+  Left
+  Width
+  Height
   FindText: String - The text the user wishes to find
   Options: Enum - Find Options
                    { frDown, frFindNext, frHideMatchCase, frHideWholeWord,
@@ -1843,7 +1860,7 @@ methods
 
 
 FileDialog Class: (Inheritance: CommonDialog->Component->Object)
-createFindDialog(owner)
+
 properties
 
   DefaultExt: string - When not using filters this will be the default extention used if no extension is given
@@ -2109,6 +2126,7 @@ properties
   AsyncProcessing: Boolean - True when async is true and it's being processed
   AsyncProcessingTime: qword - The time that it has been processing in milliseconds
 
+  HasMouseOver: boolean - True if the mouse is currently over it
 
   OnActivate: function(memoryrecord,before,currentstate):boolean - The function to call when the memoryrecord will change (or changed) Active to true. If before is true, not returning true will cause the activation to stop.
   OnDeactivate: function(memoryrecord,before,currentstate):boolean - The function to call when the memoryrecord will change (or changed) Active to false. If before is true, not returning true will cause the deactivation to stop.
@@ -2175,6 +2193,9 @@ properties
   ExpandSignColor: color
   IncreaseArrowColor: color
   DecreaseArrowColor: color
+
+  MouseHighlightedRecord() : Returns the memoryrecord that the mouse points at. nil if nothing
+
 
   OnDescriptionChange: function(addresslist,memrec):boolean - called when the user initiates a description column change on a record. Return true if you handle it, false for normal behaviour
   OnAddressChange: function(addresslist,memrec):boolean - called when the user initiates an address column change on a record. Return true if you handle it, false for normal behaviour
@@ -3567,17 +3588,17 @@ Attached: boolean - Returns true if attached to a process
 
 
 methods
-EnumDomains(): table - Returns an index table containing all domains. Each entry is build up as {DomainHandle, Name}
-EnumModuleList(DomainHandle) : table - Returns an indexed table containing information about all modules. Each module entry is build up as {ModuleHandle, BaseAddress, Name}
-EnumTypeDefs(ModuleHandle) : table - Returns an indexed table containing information about all TypeDefs (classes) . Each entry is build up as {TypeDefToken, Name, Flags, Extends}
-GetTypeDefMethods(ModuleHandle, TypedefToken) : table - Returns a table containing all the methods in the specified typedef. Each entry is build up as {MethodToken, Name, Attributes, ImplementationFlags, ILCode, NativeCode, SecondaryNativeCode[]: Integer)
-GetTypeDefParent(ModuleHandle, TypedefToken): {ModuleHandle, TypedefToken}
-GetTypeDefData(ModuleHandle, TypedefToken) : table - Returns a table containing all the fields in the specified typedef.  {ObjectType, ElementType, CountOffset, ElementSize, FirstElementOffset, ClassName, Fields[]{Offset, FieldType, Name} }
-GetMethodParameters(ModuleHandle, MethodDefToken): table - Returns a table containing all the parameters of the method. {Name, CType}
-GetAddressData(address): table - Queries a specific address and returns information about it, assuming it is a valid object. It contains the following data: {StartAddress, ObjectType, ElementType, CountOffset, ElementSize, FirstElementOffset, ClassName, Fields[]{Offset, FieldType, Name} }
+enumDomains(): table - Returns an index table containing all domains. Each entry is build up as {DomainHandle, Name}
+enumModuleList(DomainHandle) : table - Returns an indexed table containing information about all modules. Each module entry is build up as {ModuleHandle, BaseAddress, Name}
+enumTypeDefs(ModuleHandle) : table - Returns an indexed table containing information about all TypeDefs (classes) . Each entry is build up as {TypeDefToken, Name, Flags, Extends}
+getTypeDefMethods(ModuleHandle, TypedefToken) : table - Returns a table containing all the methods in the specified typedef. Each entry is build up as {MethodToken, Name, Attributes, ImplementationFlags, ILCode, NativeCode, SecondaryNativeCode[]: Integer)
+getTypeDefParent(ModuleHandle, TypedefToken): {ModuleHandle, TypedefToken}
+getTypeDefData(ModuleHandle, TypedefToken) : table - Returns a table containing all the fields in the specified typedef.  {ObjectType, ElementType, CountOffset, ElementSize, FirstElementOffset, ClassName, Fields[]{Offset, FieldType, Name} }
+getMethodParameters(ModuleHandle, MethodDefToken): table - Returns a table containing all the parameters of the method. {Name, CType}
+getAddressData(address): table - Queries a specific address and returns information about it, assuming it is a valid object. It contains the following data: {StartAddress, ObjectType, ElementType, CountOffset, ElementSize, FirstElementOffset, ClassName, Fields[]{Offset, FieldType, Name} }
 
-EnumAllObjects(): table - Queries ALL defined objects. {StartAddress, Size, TypeID{token1,token2}, ClassName}   WARNING: This will take a LOOOOOONG time and if done from the main thread will make it look like CE is frozen
-
+enumAllObjects(): table - Queries ALL defined objects. {StartAddress, Size, TypeID{token1,token2}, ClassName}   WARNING: This will take a LOOOOOONG time and if done from the main thread will make it look like CE is frozen
+enumAllObjectsOfType(ModuleHandle, TypedefToken): {} - Returns a list of addresses that have this type
 
 
 

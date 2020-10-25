@@ -22,7 +22,7 @@ uses
      zstream, luafile, disassemblerComments, commonTypeDefs, lazutf8;
 
 
-var CurrentTableVersion: dword=32;
+var CurrentTableVersion: dword=33;
     lastLoadedTableVersion: dword;
     iscetrainer: integer=0;
 
@@ -570,7 +570,7 @@ begin
             cle.color:=color;
             if isCodeListGroupHeader=false then
             begin
-              cle.code:=TCodeRecord.Create;
+              cle.code:=TAdvancedOptionsCodeRecord.Create;
 
 
               setlength(cle.code.before,length(tempbefore));

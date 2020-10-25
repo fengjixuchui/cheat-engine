@@ -955,14 +955,15 @@ properties
   Text : String - All the strings in one string
   Count: Integer - The number of strings in this list
   String[]: String - Array to access one specific string in the list
+  Data[]: Integer - Array to access the data of a specific string in the list
   [] = String[]
 
 methods
   clear() : Deletes all strings in the list
-  add(string) : adds a string to the list
+  add(string, data:integer OPTIONAL) : adds a string to the list. Returns the index
   delete(index) : Deletes a string from the list
   getText() : Returns all the strings as one big string
-  setText() : Sets the strings of the given strings object to the given text (can be multiline)
+  setText(string) : Sets the strings of the given strings object to the given text (can be multiline)
   indexOf(string): Returns the index of the specified string. Returns -1 if not found
   insert(index, string): Inserts a string at a specific spot moving the items after it
 
@@ -973,6 +974,9 @@ methods
 
   getString(index) : gets the string at the given index
   setString(index, string) : Replaces the string at the given index
+  getData(index) : Returns the integer value stored in the string
+  setData(index, integer): Sets the integer value stored in the string
+
   beginUpdate() : Stops updates from triggering other events (prevents flashing)
   endUpdate(): call after beginUpdate
 
@@ -1478,6 +1482,8 @@ properties
   SubItems: Strings - The Strings object that hold the subitems
   Selected: boolean - Returns true if selected
   Index: integer - The index in the Items object of the owner of this listitem (readonly)
+  ImageIndex: integer - The index in the attached imagelist (LargeImages/SmallImages)
+  StateIndex: integer - The index in the attached imagelist (StateImages)
   Owner: ListItems - The ListItems object that owns this ListItem (readonly)
   Data: integer - Read/Write value up to the user to implement
 
@@ -1519,6 +1525,9 @@ properties
   HideSelection: Boolean - When set to true the selection will not hide when the focus leaves the control
   RowSelect: Boolean - When set to true the whole row will be selected instead of just the first column
   OwnerData: Boolean - When set to true the listview will call the onData function for every line being displayed. Use Items.Count to set the number of virtual lines
+  LargeImages: ImageList
+  SmallImages: ImageList
+  StateImages: ImageList
 
   OnData: function(sender, ListItem) - Called when a listview with OwnerData true renders a line
 
@@ -2455,11 +2464,14 @@ createThread(function(Thread,...), ...) :
 createThreadSuspended(function(Thread,...), ...) :
   Same as createNativeThread but it won't run until resume is called on it
 
+createThreadNewState(scripttext): Creates a new thread in a new lua state. This is more efficient as no locking inside lua takes place, but has no access to userdefined lua functions and only limited base CE functions. called inside a function(t) where t is the thread.  Watch for t.Terminated to quit.  Notice: Unlike createThread, the created thread does not freeOnTerminate so you can read out the "Result" property which will be set on thread finish
+
 
 properties
   Name: string - This name will be shown when the thread terminated abnormally
   Finished: boolean - Returns true if the thread has reached the end.  Do not rely on this if the thread is freeOnTerminate(true) (which is the default)
   Terminated: boolean - Returns true if the Terminate method has been called
+  Result: string - The result of the thread function as a string
 
 methods
   freeOnTerminate(state) :

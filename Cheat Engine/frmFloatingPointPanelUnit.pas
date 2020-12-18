@@ -16,7 +16,7 @@ uses
   windows,
   {$endif}
   LCLIntf, Messages, SysUtils, Classes, Graphics, Controls, Forms,
-  Dialogs, StdCtrls, ExtCtrls, cefuncproc, ComCtrls, LResources, NewKernelHandler, commonTypeDefs;
+  Dialogs, StdCtrls, ExtCtrls, cefuncproc, ComCtrls, LResources, NewKernelHandler, commonTypeDefs, betterControls;
 
 resourcestring
   rsFPPExtended = 'Extended (default)';
@@ -545,6 +545,7 @@ procedure TfrmFloatingPointPanel.FormCreate(Sender: TObject);
 begin
   cbDisplayType.ItemIndex:=4;
   LoadFormPosition(self);
+  sbdata.font.color:=clWindowtext;
 end;
 
 initialization

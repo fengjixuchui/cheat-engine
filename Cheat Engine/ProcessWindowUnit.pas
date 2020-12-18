@@ -14,7 +14,7 @@ uses
   LCLIntf, Messages, SysUtils, Classes, Graphics, Controls,
   Forms, Dialogs, StdCtrls, ExtCtrls, CEFuncProc,CEDebugger, ComCtrls, ImgList,
   Filehandler, Menus, LResources,{tlhelp32,}{$ifdef windows}vmxfunctions,{$endif} NewKernelHandler,
-  debugHelper{, KIcon}, commonTypeDefs, math, syncobjs, Contnrs;
+  debugHelper{, KIcon}, commonTypeDefs, math, syncobjs, Contnrs, betterControls;
 
 type
   TProcesslistlong = class(tthread)
@@ -608,8 +608,10 @@ begin
 
   reg:=tregistry.create;
   try
-    if reg.OpenKey('\Software\Cheat Engine\Process Window\Font',false) then
-      LoadFontFromRegistry(processlist.Font, reg);
+    if reg.OpenKey('\Software\Cheat Engine\Process Window\Font'+darkmodestring,false) then
+      LoadFontFromRegistry(processlist.Font, reg)
+    else
+      processlist.font.color:=colorset.FontColor;
 
 
   finally
@@ -654,7 +656,7 @@ begin
 
     reg:=tregistry.create;
     try
-      if reg.OpenKey('\Software\Cheat Engine\Process Window\Font',true) then
+      if reg.OpenKey('\Software\Cheat Engine\Process Window\Font'+darkmodestring,true) then
         SaveFontToRegistry(FontDialog1.Font, reg);
 
 
@@ -1046,6 +1048,7 @@ begin
   end;
 
 
+  processlist.Canvas.font.color:=processlist.font.color;
   processlist.Canvas.TextOut(rect.Left+rect.Bottom-rect.Top+3,rect.Top,t);
   {$ifdef windows}
   if getprocessicons and (processlist.Items.Objects[index]<>nil) then

@@ -16,7 +16,7 @@ uses
      dialogs,forms,classes,LCLIntf, LCLProc, sysutils,registry,ComCtrls, menus,
      formsettingsunit, cefuncproc,AdvancedOptionsUnit, MemoryBrowserFormUnit,
      memscan,plugin, hotkeyhandler,frmProcessWatcherUnit, newkernelhandler,
-     debuggertypedefinitions, commonTypeDefs;
+     debuggertypedefinitions, commonTypeDefs, betterControls;
 
 const ceversion=7.2;
 
@@ -31,7 +31,7 @@ procedure initcetitle;
 
 
 
-const beta=' RC1'; //empty this for a release
+const beta=' Dark Mode support test'; //empty this for a release
 
 var
   CEnorm:string;

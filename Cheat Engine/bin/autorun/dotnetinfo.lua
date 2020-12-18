@@ -361,7 +361,7 @@ local function ClassFetchWaitTillReadyAndSendData(thread, frmDotNetInfo, Image, 
     
     if j==10 then
       synchronize(OnDataFunction,thread, block, StartIndex)
-      StartIndex=j+1
+      StartIndex=i+1
       block={}      
     end
   end
@@ -637,6 +637,7 @@ local function ImageSelectionChange(frmDotNetInfo, sender)
     
     
     StartClassFetch(frmDotNetInfo, Image, function(thread, classlistchunk, StartIndex)
+      --print("StartIndex="..StartIndex)
       --executed every 10 lines or so, in the main thread
       local ClassFilterText=frmDotNetInfo.edtClassFilter.Text:upper()  --assume case insentivie
       local i
@@ -802,7 +803,7 @@ local function getMethodAddress(Method)
     if address and address~=0 then 
       return address 
     else 
-      return nil,trasnslate('Failure compiling the method')
+      return nil,translate('Failure compiling the method')
     end
   else
     --the method already contains ILCode and NativeCode (requirying won't help until the collector is reloaded)
@@ -931,28 +932,37 @@ local ELEMENT_TYPE_U8         = 0x0b
 local ELEMENT_TYPE_R4         = 0x0c
 local ELEMENT_TYPE_R8         = 0x0d
 local ELEMENT_TYPE_STRING     = 0x0e
-local ELEMENT_TYPE_PTR        = 0x0f   
+local ELEMENT_TYPE_PTR        = 0x0f 
+local ELEMENT_TYPE_I          = 0x18
+local ELEMENT_TYPE_U          = 0x19
+
 
 local LocalDotNetValueReaders={} --takes a bytetable of max 8 bytes and convert it to the correct type
 LocalDotNetValueReaders[ELEMENT_TYPE_BOOLEAN]=function(bt)
-  if bt[1]==0 then
-    return translate("False")    
-  else
-    return translate("True")
+  if bt then
+    if bt[1]==0 then
+      return translate("False")    
+    else
+      return translate("True")
+    end
   end
 end
 
 LocalDotNetValueReaders[ELEMENT_TYPE_CHAR]=function(bt) 
-  local c=string.char(bt[1])
-  return c..' (#'..bt[1]..')'
+  if bt then
+    local c=string.char(bt[1])
+    return c..' (#'..bt[1]..')'
+  end
 end
 
 LocalDotNetValueReaders[ELEMENT_TYPE_I1]=function(bt) 
-  local v=bt[1]
-  if v[1] and ((v & 0x80)~=0) then
-    return v-0x100
-  else
-    return v
+  if bt then
+    local v=bt[1]
+    if v and ((v & 0x80)~=0) then
+      return v-0x100
+    else
+      return v
+    end
   end
 end
 
@@ -963,6 +973,8 @@ LocalDotNetValueReaders[ELEMENT_TYPE_I4]=function(bt) return byteTableToDword(bt
 LocalDotNetValueReaders[ELEMENT_TYPE_U4]=function(bt) return byteTableToDword(bt) end
 LocalDotNetValueReaders[ELEMENT_TYPE_I8]=function(bt) return byteTableToQword(bt) end
 LocalDotNetValueReaders[ELEMENT_TYPE_U8]=function(bt) return byteTableToQword(bt) end
+LocalDotNetValueReaders[ELEMENT_TYPE_I]=function(bt) if targetIs64Bit() then return LocalDotNetValueReaders[ELEMENT_TYPE_I8](bt) else return LocalDotNetValueReaders[ELEMENT_TYPE_I4](bt) end end
+LocalDotNetValueReaders[ELEMENT_TYPE_U]=function(bt) if targetIs64Bit() then return LocalDotNetValueReaders[ELEMENT_TYPE_U8](bt) else return LocalDotNetValueReaders[ELEMENT_TYPE_U8](bt) end end
 LocalDotNetValueReaders[ELEMENT_TYPE_R4]=function(bt) return byteTableToFloat(bt) end
 LocalDotNetValueReaders[ELEMENT_TYPE_R8]=function(bt) return byteTableToDouble(bt) end
 LocalDotNetValueReaders[ELEMENT_TYPE_PTR]=function(bt) 
@@ -982,6 +994,8 @@ LocalDotNetValueWriters[ELEMENT_TYPE_I4]=function(value) return dwordToByteTable
 LocalDotNetValueWriters[ELEMENT_TYPE_U4]=LocalDotNetValueWriters[ELEMENT_TYPE_I4]
 LocalDotNetValueWriters[ELEMENT_TYPE_I8]=function(value) return qwordToByteTable(value) end
 LocalDotNetValueWriters[ELEMENT_TYPE_U8]=LocalDotNetValueWriters[ELEMENT_TYPE_I8]
+LocalDotNetValueWriters[ELEMENT_TYPE_I]=function(value) if targetIs64Bit() then return LocalDotNetValueWriters[ELEMENT_TYPE_I8](value) else return LocalDotNetValueWriters[ELEMENT_TYPE_I4](value) end end
+LocalDotNetValueWriters[ELEMENT_TYPE_U]=function(value) if targetIs64Bit() then return LocalDotNetValueWriters[ELEMENT_TYPE_U8](value) else return LocalDotNetValueWriters[ELEMENT_TYPE_U8](value) end end
 LocalDotNetValueWriters[ELEMENT_TYPE_R4]=function(value) return floatToByteTable(value) end
 LocalDotNetValueWriters[ELEMENT_TYPE_R8]=function(value) return doubleToByteTable(value) end
 
@@ -998,8 +1012,12 @@ DotNetValueReaders[ELEMENT_TYPE_I4]=function(address) return readInteger(address
 DotNetValueReaders[ELEMENT_TYPE_U4]=function(address) return readInteger(address) end 
 DotNetValueReaders[ELEMENT_TYPE_I8]=function(address) return readQword(address) end 
 DotNetValueReaders[ELEMENT_TYPE_U8]=DotNetValueReaders[MONO_TYPE_I8]
+DotNetValueReaders[ELEMENT_TYPE_I]=function(address) if targetIs64Bit() then return DotNetValueReaders[ELEMENT_TYPE_I8](address) else return DotNetValueReaders[ELEMENT_TYPE_I4](address) end end
+DotNetValueReaders[ELEMENT_TYPE_U]=function(address) if targetIs64Bit() then return DotNetValueReaders[ELEMENT_TYPE_U8](address) else return DotNetValueReaders[ELEMENT_TYPE_U8](address) end end
 DotNetValueReaders[ELEMENT_TYPE_R4]=function(address) return readFloat(address) end 
 DotNetValueReaders[ELEMENT_TYPE_R8]=function(address) return readDouble(address) end 
+
+dd=DotNetValueReaders[ELEMENT_TYPE_I]
 
 
 DotNetValueReaders[ELEMENT_TYPE_PTR]=function(address) 
@@ -1037,12 +1055,18 @@ end
 
 local function setFieldValue(Field,Address,Value)
   --for .net Value is a string, for mono it's an integer
+  --printf("setFieldValue() Field: %s Address:  %x Value %s", Field.Name, Address, Value)
+  
   
   if Field.Class.Image.Domain.Control==CONTROL_MONO then  
-    setFieldValueNoInject(Field, Addrsss,Value)
+    --print("mono path")
+
     if (Field.VarType==ELEMENT_TYPE_STRING) or (Field.VarTypeName == "System.String") then
       return nil,translate('Strings can not be written')
     end
+    
+    --print("mono path 2")
+
     
     Value=tonumber(Value)
     local vtable=mono_class_getVTable(Field.Class)
@@ -1050,27 +1074,35 @@ local function setFieldValue(Field,Address,Value)
     --convert Value to bytes   
     local writer=LocalDotNetValueWriters[Field.VarType]
     if writer==nil then
+      --printf("writer==nil.  Field.VarType=%d", Field.VarType)
+      --dfield=Field
       return nil,translate('Unsupported field type')    
     end
+    --print("mono path 3")
     
     local bt=writer(Value)
     if bt then
+      --print("mono path 4")
       if Field.Static and ((Address==nil) or (Address==0)) then 
         local qvalue=byteTableToQword(bt)      
         mono_setStaticFieldValue(vtable, Field.Handle, qvalue)
       else
+        --print("mono path 5")
         local addr=Field.Address
         if addr==nil then
           addr=Address+Field.Offset
         end
-        writeBytes(addr,bt)        
+        writeBytes(addr,bt)  
+
+        --print("mono path 6")        
       end
       return true
     else
+      --print("mono path 1000")
       return nil,translate('value convertor failure')    
     end
   else
-    if dotnetpipe and dotnetpipe.isValid() then
+    if dotnetpipe and dotnetpipe.isValid() then      
       dotnet_setFieldValue(dotnet_getModuleID(Field.Class.Image.FileName), Field.Handle, Address, Value)
       return true
     else
@@ -1088,10 +1120,7 @@ local function setFieldValue(Field,Address,Value)
 end
 
 local function getStaticFieldValue(Field)
-
-
   if Field.Class.Image.Domain.Control==CONTROL_MONO then
-    outputDebugString("getting vtable")
     local vtable=mono_class_getVTable(Field.Class.Handle) --il2cpp returns 0, but is also doesn't need it
     
     --print("getting qvalue")
@@ -1114,7 +1143,7 @@ local function getStaticFieldValue(Field)
         
       
         if bt==nil then
-          print("bt = nil")
+          --print("bt = nil")
         else      
           local vs=reader(bt)
           if vs==nil then
@@ -1149,7 +1178,7 @@ local function FieldValueUpdaterTimer(frmDotNetInfo, sender)
       local ci=frmDotNetInfo.lvStaticFields.Items[i].Data
       if ci>0 and ci<=#Class.Fields then
         
-        if Class.Fields[ci].Address and Class.Fields[ci].Address~=0 then
+        if Class.Fields[ci].Address and (Class.Fields[ci].Address~=0) and (not (isKeyPressed(VK_CONTROL))) then
           if (Class.Fields[ci].VarType==ELEMENT_TYPE_STRING) or (Class.Fields[ci].VarTypeName == "System.String") then     
             value=readDotNetString(readPointer(Class.Fields[ci].Address), Class.Fields[ci])
           else
@@ -1166,8 +1195,6 @@ local function FieldValueUpdaterTimer(frmDotNetInfo, sender)
             
             --printf("value=%s", value);
           end
-          
-        
         else
           --querry from the target if possible
           value=getStaticFieldValue(Class.Fields[ci])
@@ -1351,6 +1378,18 @@ local function lvStaticFieldsDblClick(frmDotNetInfo,sender)
   
 end
 
+
+local function miBrowseFieldClick(frmDotNetInfo,sender)
+  local entry=frmDotNetInfo.lvFields.Selected
+  if entry then
+    local address=tonumber(entry.Caption,16)
+    if address then
+      getMemoryViewForm().HexadecimalView.Address=address
+      getMemoryViewForm().show()
+    end
+  end
+end
+
 local function lvFieldsDblClick(frmDotNetInfo,sender)
   if sender.Selected==nil then return end
   local ci=sender.Selected.Data
@@ -1400,7 +1439,8 @@ function miDotNetInfoClick(sender)
   --print("miDotNetInfoClick 2")
   if miMonoTopMenuItem and miMonoTopMenuItem.miMonoActivate.Visible and (monopipe==nil)  then
     --print("checking with getDotNetDataCollector().Attached")
-    if getDotNetDataCollector().Attached==false then --no .net and the user hasn't activated mono features. Do it for the user
+    local dndc=getDotNetDataCollector()
+    if dndc==nil or dndc.Attached==false then --no .net and the user hasn't activated mono features. Do it for the user
       --print("Launching mono data collector")
       LaunchMonoDataCollector()  
     end
@@ -1425,29 +1465,43 @@ function miDotNetInfoClick(sender)
   
   
   frmDotNetInfo.OnDestroy=function(f)
-    f.SaveFormPosition({
-      f.gbDomains.Width,    
-      f.gbImages.Width,
-      f.gbClasses.Width,
-      f.gbStaticFields.Height,
-      f.gbFields.Height,      
-      
-      --save the column widths
-      f.lvStaticFields.Columns[0].Width,
-      f.lvStaticFields.Columns[1].Width,
-      f.lvStaticFields.Columns[2].Width,      
-      f.lvStaticFields.Columns[3].Width,
-      
-      f.lvFields.Columns[0].Width,
-      f.lvFields.Columns[1].Width,
-      f.lvFields.Columns[2].Width,      
-      f.lvFields.Columns[3].Width,
-  
-      f.lvMethods.Columns[0].Width,
-      f.lvMethods.Columns[1].Width})
+    --print("destroy frmDotNetInfo")
+    --print("f.name=")
+    --printf(f.name)
     
+    local dataToSave= {
+        f.gbDomains.Width,
+        f.gbImages.Width,
+        f.gbClasses.Width,
+        f.gbStaticFields.Height,
+        f.gbFields.Height,
+        
+        --save the column widths
+        f.lvStaticFields.Columns[0].Width,
+        f.lvStaticFields.Columns[1].Width,
+        f.lvStaticFields.Columns[2].Width,
+        f.lvStaticFields.Columns[3].Width,
+        
+        f.lvFields.Columns[0].Width,
+        f.lvFields.Columns[1].Width,
+        f.lvFields.Columns[2].Width,
+        f.lvFields.Columns[3].Width,
+    
+        f.lvMethods.Columns[0].Width,
+        f.lvMethods.Columns[1].Width}
+        
+    --_G.dts=dataToSave
+        
+   -- print("after creating dataToSave")
+    f.SaveFormPosition(dataToSave)
+    
+   -- print("after f.SaveFormPosition")
     CancelClassFetch(frmDotNetInfos[f.Tag])
+    
+    --print("after CancelClassFetch")
     frmDotNetInfos[f.Tag]=nil
+    
+    --print("after frmDotNetInfos[f.Tag]=nil  wtf?")
   end
   
   frmDotNetInfo.miImageFind.OnClick=function(f)
@@ -1464,6 +1518,11 @@ function miDotNetInfoClick(sender)
   local formdata={}
   frmDotNetInfo.loadedFormPosition,formdata=frmDotNetInfo.LoadFormPosition()
   if frmDotNetInfo.loadedFormPosition then
+    --print("Loaded form position")
+    if frmDotNetInfo.width>getScreenWidth() then
+      frmDotNetInfo.Width=getScreenWidth() * 0.9
+    end
+    
     if #formdata>=5 then
       frmDotNetInfo.gbDomains.Width=formdata[1]
       frmDotNetInfo.gbImages.Width=formdata[2]
@@ -1542,7 +1601,11 @@ function miDotNetInfoClick(sender)
   frmDotNetInfo.tFieldValueUpdater.OnTimer=function(t) FieldValueUpdaterTimer(frmDotNetInfo,t) end
   frmDotNetInfo.lvStaticFields.OnDblClick=function(sender) lvStaticFieldsDblClick(frmDotNetInfo,sender) end
   frmDotNetInfo.lvFields.OnDblClick=function(sender) lvFieldsDblClick(frmDotNetInfo,sender) end
-   
+  frmDotNetInfo.miBrowseField.OnClick=function(sender) miBrowseFieldClick(frmDotNetInfo, sender) end
+  
+  frmDotNetInfo.pmFields.OnPopup=function(sender)
+    frmDotNetInfo.miBrowseField.Visible=frmDotNetInfo.lvFields.Selected and frmDotNetInfo.comboFieldBaseAddress.Text~=''
+  end
   --Init
   
   

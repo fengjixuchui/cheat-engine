@@ -12,7 +12,7 @@ uses
   LCLIntf, LCLType, Classes, SysUtils, controls, stdctrls, comctrls, ExtCtrls, graphics,
   math, MemoryRecordUnit, FPCanvas, CEFuncProc, NewKernelHandler, menus,dom,
   XMLRead,XMLWrite, symbolhandler, AddresslistEditor, inputboxtopunit,
-  frmMemrecComboboxUnit, commonTypeDefs, multilineinputqueryunit, LazUTF8, StringHashList;
+  frmMemrecComboboxUnit, commonTypeDefs, multilineinputqueryunit, LazUTF8, StringHashList, betterControls;
 
 type
   TTreeviewWithScroll=class(TTreeview)
@@ -1940,6 +1940,8 @@ var
   bordersize: integer;
 
   tempstring: string;
+
+  c: Tcolor;
 begin
   //multiselect implementation
 
@@ -1988,9 +1990,9 @@ begin
     if memrec.isSelected then
     begin
       if node.Selected then
-        sender.Canvas.Brush.Color:=SelectedBackgroundColor //clHighlight
+        sender.Canvas.Brush.Color:=ColorToRGB(SelectedBackgroundColor)  //SelectedBackgroundColor //clHighlight
       else
-        sender.Canvas.Brush.Color:=SelectedSecondaryBackgroundColor; //clActiveCaption;
+        sender.Canvas.Brush.Color:=ColorToRGB(SelectedSecondaryBackgroundColor); //clActiveCaption;
 
       oldpenmode:=sender.Canvas.Pen.Mode;
       sender.Canvas.Pen.Mode:=pmMask;
@@ -2004,7 +2006,7 @@ begin
     if memrec.isSelected then
     begin
       sender.canvas.pen.color:=clWindowtext;
-      sender.Canvas.Font.Color:=InvertColor(memrec.Color)
+      sender.Canvas.Font.Color:=INVERTCOLOR(ColorToRGB(SelectedBackgroundColor));//  InvertColor(memrec.Color)
     end
     else
     begin
@@ -2449,6 +2451,7 @@ begin
   symhandler.AddFinishedLoadingSymbolsNotification(SymbolsLoaded);
 
 
+
   checkboxActiveSelectedColor:=clRed;
   CheckboxActiveColor:=clRed;
   CheckboxSelectedColor:=clWindowtext;
@@ -2458,6 +2461,7 @@ begin
   expandSignColor:=clWindowText;
   increaseArrowColor:=clGreen;
   decreaseArrowColor:=clRed;
+
 
 end;
 

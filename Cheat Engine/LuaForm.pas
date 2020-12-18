@@ -6,7 +6,7 @@ interface
 
 uses
 
-  Classes, lua;
+  Classes, lua, betterControls;
 
 procedure initializeLuaForm;
 
@@ -24,7 +24,7 @@ uses
   SysUtils, Controls, menus, lualib, lauxlib, LuaHandler,
   LuaCaller, pluginexports, forms, dialogs, ceguicomponents, XMLWrite, XMLRead,
   Graphics, DOM, cefuncproc, newkernelhandler, typinfo, LCLIntf, LCLProc,
-  luaclass, LuaCustomControl;
+  LuaClass, LuaCustomControl;
 
 resourcestring
   rsTheGivenFormIsNotCompatible = 'The given form is not compatible. Formclass=';
@@ -327,6 +327,8 @@ begin
 
     f:=TCEForm.Createnew(nil);   //6.3: was application
     f.LoadFromFile(filename);
+
+
 
     luaclass_newClass(L, f);
     result:=1;

@@ -8,7 +8,7 @@ interface
 uses
   Windows, forms, graphics, Classes, SysUtils, controls, stdctrls, comctrls,symbolhandler,
   cefuncproc,newkernelhandler, hotkeyhandler, dom, XMLRead,XMLWrite,
-  customtypehandler, fileutil, LCLProc, commonTypeDefs, pointerparser, LazUTF8, LuaClass, math;
+  customtypehandler, fileutil, LCLProc, commonTypeDefs, pointerparser, LazUTF8, LuaClass, math, betterControls;
 {$endif}
 
 {$ifdef darwin}
@@ -276,7 +276,7 @@ type
 
     {$ifndef jni}
     treenode: TTreenode;
-    autoAssembleWindow: TForm; //window storage for an auto assembler editor window
+    autoAssembleWindow: TCustomForm; //window storage for an auto assembler editor window
     {$endif}
 
     isSelected: boolean; //lazarus bypass. Because lazarus does not implement multiselect I have to keep track of which entries are selected
@@ -1271,6 +1271,9 @@ end;
 
 procedure TMemoryRecord.setColor(c: TColor);
 begin
+  if c=graphics.clWindowText then  //in case clWindowText isn't good to use
+    c:=clWindowtext;
+
   fColor:=c;
   {$IFNDEF jni}
   TAddresslist(fOwner).Update;
@@ -3172,7 +3175,8 @@ begin
                   temps:=mr.getValue;
                   if mr.ShowAsHex then
                   begin
-                    temps:='0x'+temps;
+                    if ShowAsHex=false then
+                      temps:='0x'+temps;
 
                     if VarType in [vtSingle, vtDouble, vtCustom] then
                     begin
@@ -3266,9 +3270,15 @@ begin
 
   if fShowAsHex and (not (vartype in [vtSingle, vtDouble, vtByteArray, vtString] )) then
   begin
-    currentvalue:=trim(currentValue);
     if length(currentvalue)>0 then
     begin
+      currentvalue:=trim(currentValue);
+      if copy(currentvalue,1,3)='-0x' then
+        currentvalue:='-'+copy(currentvalue,4)
+      else
+      if copy(currentvalue,1,2)='0x' then
+        currentvalue:=copy(currentvalue,3);
+
       if currentvalue[1]='-' then
       begin
         currentvalue:='-$'+copy(currentvalue,2,length(currentvalue));

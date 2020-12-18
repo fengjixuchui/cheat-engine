@@ -22,7 +22,7 @@
       <AutoIncrementBuild Value="True"/>
       <MajorVersionNr Value="7"/>
       <MinorVersionNr Value="2"/>
-      <BuildNr Value="6531"/>
+      <BuildNr Value="6627"/>
       <Language Value=""/>
       <CharSet Value=""/>
       <StringTable CompanyName="Cheat Engine" FileDescription="Cheat Engine" ProductVersion="7.2"/>
@@ -38,7 +38,7 @@
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir);$(LazarusDir)\ide\include\$(TargetOS);$(LazarusDir)\images;$(LazarusDir)\ideintf\images"/>
-            <OtherUnitFiles Value="VEHDebug;dbk32;lua;jvdesign;$(LazarusDir)\designer;$(LazarusDir)\ide"/>
+            <OtherUnitFiles Value="VEHDebug;dbk32;lua;jvdesign;$(LazarusDir)\designer;$(LazarusDir)\ide;betterControls"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
           <Parsing>
@@ -109,7 +109,7 @@
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir);$(LazarusDir)\ide\include\$(TargetOS);$(LazarusDir)\images;$(LazarusDir)\ideintf\images"/>
-            <OtherUnitFiles Value="VEHDebug;dbk32;lua;jvdesign;$(LazarusDir)\designer;$(LazarusDir)\ide"/>
+            <OtherUnitFiles Value="VEHDebug;dbk32;lua;jvdesign;$(LazarusDir)\designer;$(LazarusDir)\ide;betterControls"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-SSE4-AVX-$(TargetOS)"/>
           </SearchPaths>
           <Parsing>
@@ -154,7 +154,8 @@
 -OpCOREAVX2
 -dbenchmarkps
 -dcemain
--dNDEBUG"/>
+-dNDEBUG
+-dDBVMFORAMDISWORKING"/>
             <OtherDefines Count="13">
               <Define0 Value="NOTMULTITHREADED"/>
               <Define1 Value="benchmarkps"/>
@@ -182,7 +183,7 @@
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir);$(LazarusDir)\ide\include\$(TargetOS);$(LazarusDir)\images;$(LazarusDir)\ideintf\images"/>
-            <OtherUnitFiles Value="VEHDebug;dbk32;luamac;jvdesign;$(LazarusDir)\designer;$(LazarusDir)\ide"/>
+            <OtherUnitFiles Value="VEHDebug;dbk32;luamac;jvdesign;$(LazarusDir)\designer;$(LazarusDir)\ide;betterControls"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
           <Parsing>
@@ -249,7 +250,7 @@
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir);$(LazarusDir)\ide\include\$(TargetOS);$(LazarusDir)\images;$(LazarusDir)\ideintf\images"/>
-            <OtherUnitFiles Value="VEHDebug;dbk32;lua;jvdesign;$(LazarusDir)\designer;$(LazarusDir)\ide"/>
+            <OtherUnitFiles Value="VEHDebug;dbk32;lua;jvdesign;$(LazarusDir)\designer;$(LazarusDir)\ide;betterControls"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
           <Parsing>
@@ -296,7 +297,7 @@
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir);$(LazarusDir)\ide\include\$(TargetOS);$(LazarusDir)\images;$(LazarusDir)\ideintf\images"/>
-            <OtherUnitFiles Value="VEHDebug;dbk32;lua;jvdesign;$(LazarusDir)\designer;$(LazarusDir)\ide"/>
+            <OtherUnitFiles Value="VEHDebug;dbk32;lua;jvdesign;$(LazarusDir)\designer;$(LazarusDir)\ide;betterControls"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
           <Parsing>
@@ -350,7 +351,7 @@
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir);$(LazarusDir)\ide\include\$(TargetOS);$(LazarusDir)\images;$(LazarusDir)\ideintf\images"/>
-            <OtherUnitFiles Value="VEHDebug;dbk32;lua;jvdesign;$(LazarusDir)\designer;$(LazarusDir)\ide"/>
+            <OtherUnitFiles Value="VEHDebug;dbk32;lua;jvdesign;$(LazarusDir)\designer;$(LazarusDir)\ide;betterControls"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
           <Parsing>
@@ -394,7 +395,7 @@
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir);$(LazarusDir)\ide\include\$(TargetOS);$(LazarusDir)\images;$(LazarusDir)\ideintf\images"/>
-            <OtherUnitFiles Value="VEHDebug;dbk32;luamac;jvdesign;$(LazarusDir)\designer;$(LazarusDir)\ide"/>
+            <OtherUnitFiles Value="VEHDebug;dbk32;luamac;jvdesign;$(LazarusDir)\designer;$(LazarusDir)\ide;betterControls"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
           <Parsing>
@@ -440,15 +441,6 @@
 -dCUSTOMFLOAT
 -dXDEBUG
 -dUSELAZFREETYPE"/>
-            <OtherDefines Count="7">
-              <Define0 Value="benchmarkps"/>
-              <Define1 Value="cemain"/>
-              <Define2 Value="NDEBUG"/>
-              <Define3 Value="D3DDebug"/>
-              <Define4 Value="NOVMX"/>
-              <Define5 Value="CUSTOMFLOAT"/>
-              <Define6 Value="USELAZFREETYPE"/>
-            </OtherDefines>
           </Other>
         </CompilerOptions>
       </Item8>
@@ -461,7 +453,7 @@
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir);$(LazarusDir)\ide\include;$(LazarusDir)\ide\include\$(TargetOS);$(LazarusDir)\images"/>
-            <OtherUnitFiles Value="VEHDebug;dbk32;lua;jvdesign;$(LazarusDir)\designer;$(LazarusDir)\ide"/>
+            <OtherUnitFiles Value="VEHDebug;dbk32;lua;jvdesign;$(LazarusDir)\designer;$(LazarusDir)\ide;betterControls"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
           <Parsing>
@@ -527,7 +519,7 @@
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir);$(LazarusDir)\ide\include;$(LazarusDir)\ide\include\$(TargetOS);$(LazarusDir)\images"/>
-            <OtherUnitFiles Value="VEHDebug;dbk32;lua;jvdesign;$(LazarusDir)\designer;$(LazarusDir)\ide"/>
+            <OtherUnitFiles Value="VEHDebug;dbk32;lua;jvdesign;$(LazarusDir)\designer;$(LazarusDir)\ide;betterControls"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
           <Parsing>
@@ -641,7 +633,7 @@
         <PackageName Value="LCL"/>
       </Item8>
     </RequiredPackages>
-    <Units Count="396">
+    <Units Count="401">
       <Unit0>
         <Filename Value="cheatengine.lpr"/>
         <IsPartOfProject Value="True"/>
@@ -2732,6 +2724,31 @@
         <IsPartOfProject Value="True"/>
         <UnitName Value="LuaDotNetPipe"/>
       </Unit395>
+      <Unit396>
+        <Filename Value="luaremoteexecutor.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="LuaRemoteExecutor"/>
+      </Unit396>
+      <Unit397>
+        <Filename Value="betterControls\newbutton.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="newButton"/>
+      </Unit397>
+      <Unit398>
+        <Filename Value="betterControls\newcheckbox.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="newCheckbox"/>
+      </Unit398>
+      <Unit399>
+        <Filename Value="betterControls\newradiobutton.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="newRadioButton"/>
+      </Unit399>
+      <Unit400>
+        <Filename Value="betterControls\bettercontrols.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="betterControls"/>
+      </Unit400>
     </Units>
   </ProjectOptions>
   <CompilerOptions>
@@ -2742,7 +2759,7 @@
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir);$(LazarusDir)\ide\include\$(TargetOS);$(LazarusDir)\images;$(LazarusDir)\ideintf\images"/>
-      <OtherUnitFiles Value="VEHDebug;dbk32;lua;jvdesign;$(LazarusDir)\designer;$(LazarusDir)\ide"/>
+      <OtherUnitFiles Value="VEHDebug;dbk32;lua;jvdesign;$(LazarusDir)\designer;$(LazarusDir)\ide;betterControls"/>
       <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
     <Parsing>
@@ -2780,7 +2797,7 @@
       <CompilerMessages>
         <IgnoredMessages idx6058="True"/>
       </CompilerMessages>
-      <CustomOptions Value="-dbenchmarkps -dcemain -WB00400000 -dNDEBUG"/>
+      <CustomOptions Value="-dbenchmarkps -dcemain -WB00400000 -dNDEBUG -dDBVMFORAMDISWORKING"/>
       <OtherDefines Count="13">
         <Define0 Value="NOTMULTITHREADED"/>
         <Define1 Value="benchmarkps"/>

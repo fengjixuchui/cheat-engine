@@ -14,7 +14,7 @@ uses
   LCLIntf, LResources, Messages, SysUtils, Variants, Classes, Graphics,
   Controls, Forms, Dialogs, StdCtrls, disassembler, ExtCtrls, Menus,
   NewKernelHandler, clipbrd, ComCtrls, fgl, formChangedAddresses, LastDisassembleData,
-  vmxfunctions;
+  vmxfunctions, betterControls;
 
 type
   Tcoderecord = class
@@ -895,8 +895,8 @@ begin
 
     with FormFoundCodeListExtra do
     begin
-      dbvmMissedEntries.Caption:=disassembled[1].s;
-      dbvmMissedEntries.tag:=disassembled[1].a;
+      label1.Caption:=disassembled[1].s;
+      label1.tag:=disassembled[1].a;
 
       Label2.Caption:=disassembled[2].s;
       Label2.tag:=disassembled[2].a;

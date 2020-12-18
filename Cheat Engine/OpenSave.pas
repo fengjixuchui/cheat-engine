@@ -19,10 +19,10 @@ uses
      {MemoryTrainerDesignUnit,}StdCtrls,{ExtraTrainerComponents,}Graphics,Controls,
      tableconverter, ExtCtrls,Dialogs,NewKernelHandler, hotkeyhandler, structuresfrm,
      StructuresFrm2, comctrls,dom, xmlread,xmlwrite, FileUtil, ceguicomponents,
-     zstream, luafile, disassemblerComments, commonTypeDefs, lazutf8;
+     zstream, luafile, disassemblerComments, commonTypeDefs, lazutf8, betterControls;
 
 
-var CurrentTableVersion: dword=33;
+var CurrentTableVersion: dword=34;
     lastLoadedTableVersion: dword;
     iscetrainer: integer=0;
 

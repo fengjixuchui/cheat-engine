@@ -253,7 +253,7 @@ function monoIL2CPPSymbolEnum(t)
   if monopipe==nil or t.Terminated then return end
   
   if priority then
-    print("parsing "..images[priority].name..'(1/'..#images..')');
+    --print("parsing "..images[priority].name..'(1/'..#images..')');
   
     parseImage(t, images[priority])
   end
@@ -264,12 +264,12 @@ function monoIL2CPPSymbolEnum(t)
     
     if priority then x=x+1 end
     
-    print("parsing "..images[i].name..'('..x..'/'..#images..')');
+    --print("parsing "..images[i].name..'('..x..'/'..#images..')');
     parseImage(t, images[i])
     if monopipe==nil or t.Terminated then return end
   end
 
-  print("all symbols loaded") --print is threadsafe
+  --print("all symbols loaded") --print is threadsafe
   monoSymbolList.FullyLoaded=true
 end
 
@@ -341,6 +341,13 @@ function fillMissingFunctions()
 end
 
 function LaunchMonoDataCollector()
+  if debug_isBroken() then
+    if inMainThread() then   
+      messageDialog(translate('You can not use this while the process is frozen'), mtError, mbOK)
+    end
+    return nil
+  end
+  
   --if debug_canBreak() then return 0 end
   
   if monoSymbolEnum then
@@ -654,6 +661,8 @@ function mono_addressLookupCallback(address)
   --end
   if monopipe==nil then return nil end
   if monopipe.IL2CPP then return nil end
+  
+  if debug_isBroken() then return nil end
 
 
   local ji=mono_getJitInfo(address)
@@ -1094,8 +1103,9 @@ function mono_class_getVTable(domain, klass)
   monopipe.writeQword(klass)
   
   result=monopipe.readQword()
-  
-  monopipe.unlock()
+  if monopipe then
+    monopipe.unlock()
+  end
   return result  
 end
 
@@ -2050,6 +2060,12 @@ function mono_image_rva_map(image, offset)
 end
 
 function mono_string_readString(stringobject)
+  if stringobject==nil then
+    print("mono_string_readString called with nil")
+    print(debug.traceback())
+    return nil,'invalid parameter'
+  end
+
   local length,stringstart
   --printf("mono_string_readString(%x)",stringobject)
   if targetIs64Bit() then
@@ -2063,7 +2079,11 @@ function mono_string_readString(stringobject)
     stringstart=stringobject+0x10
   end
   
-  return readString(stringstart,length*2,true)  
+  if length==nil then
+    return string.format(translate('<Invalid string at %.8x>'), stringobject)
+  else  
+    return readString(stringstart,length*2,true)
+  end    
 end
 
 function mono_readObject()

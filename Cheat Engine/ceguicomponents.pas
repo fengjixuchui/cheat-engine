@@ -13,7 +13,7 @@ uses
   dialogs, JvDesignSurface, DOM, typinfo, LResources, JvDesignImp, JvDesignUtils,
   graphics, math, xmlread,xmlwrite, WSStdCtrls, custombase85, PropEdits,
   ComponentEditors, CEListviewItemEditor, TreeViewPropEdit, menus, MenuIntf, LCLProc,
-  Calendar;
+  Calendar, betterControls;
 
 type TCEPageControl=class(TPageControl);
 type
@@ -603,7 +603,7 @@ type TCEEdit=class(TEdit)
     property TextHintFontStyle: TFontStyle read fTextHintFontStyle write fTextHintFontStyle;
   end;
 
-type TCEForm=class(TCustomForm)
+type TCEForm=class(TForm) //TCustomForm)
   private
     saving: boolean;
     fVisible: boolean;
@@ -1409,6 +1409,13 @@ begin
     else
       raise exception.create(rsInvalidFormData);
   end;
+
+  if ShouldAppsUseDarkMode() then
+    if color=clDefault then
+    begin
+      color:=clWindow;
+      font.color:=clWindowtext;
+    end;
 end;
 
 procedure TCEForm.LoadFromFileLFM(filename: string);
@@ -1426,6 +1433,13 @@ begin
   ms.Destroy;
 
   active:=wasActive;
+
+  if ShouldAppsUseDarkMode() then
+    if color=clDefault then
+    begin
+      color:=clWindow;
+      font.color:=clWindowtext;
+    end;
 end;
 
 procedure TCEForm.paint;
@@ -1588,6 +1602,16 @@ initialization
   registerclass(TFontDialog);
   registerclass(TBitBtn);
   registerclass(TSpeedButton);
+  registerclass(TStaticText);
+  registerclass(TShape);
+  registerclass(TBevel);
+  registerclass(TNotebook); //eww...
+  registerclass(TLabeledEdit);
+  registerclass(TControlBar);
+  registerclass(TFlowPanel);
+  registerclass(TApplicationProperties); //might be usefull...
+  registerclass(TColorListBox);
+
 
 
   RegisterPropertyEditor(ClassTypeInfo(TListItems), TCEListView, 'Items', TCEListViewItemsPropertyEditor);

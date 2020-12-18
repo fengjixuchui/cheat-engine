@@ -18,7 +18,7 @@ uses
   Buttons, Arrow, Spin, Menus, CEFuncProc, NewKernelHandler, symbolhandler,
   memoryrecordunit, types, byteinterpreter, math, CustomTypeHandler,
   commonTypeDefs, lua, lualib, lauxlib, luahandler{$ifdef windows}, CommCtrl{$endif}, LuaClass, Clipbrd,
-  DPIHelper;
+  DPIHelper, betterControls;
 
 const WM_disablePointer=WM_USER+1;
 
@@ -505,7 +505,7 @@ begin
     if fInvalidOffset then
       edtOffset.Font.Color:=clRed
     else
-      edtOffset.Font.Color:=clDefault;
+      edtOffset.Font.Color:=clWindowtext;
   end;
 end;
 
@@ -616,7 +616,10 @@ begin
   lblPointerAddressToValue.Caption:=' ';
   lblPointerAddressToValue.popupmenu:=parentPointer.owner.pmPointerRow;
   lblPointerAddressToValue.Tag:=ptruint(self);
-  lblPointerAddressToValue.Font.Color:=clBlue;
+  if ShouldAppsUseDarkMode() then
+    lblPointerAddressToValue.Font.Color:=$ff7f00 //inccolor(clBlue,32)
+  else
+    lblPointerAddressToValue.Font.Color:=clBlue;
   lblPointerAddressToValue.Font.Underline:=true;
 
   //an offset editbox
@@ -801,7 +804,7 @@ begin
   if fInvalidBaseAddress then
     baseAddress.Font.Color:=clRed
   else
-    baseAddress.Font.Color:=clDefault;
+    baseAddress.Font.Color:=clWindowtext;
 
   processAddress;
 end;
@@ -1056,6 +1059,8 @@ begin
   baseAddress.Text:=owner.editAddress.Text;
   baseAddress.OnChange:=basechange;
 //  baseAddress.OnResize:=baseaddressresize;;
+
+
 
 
   baseValue:=tlabel.create(self);
@@ -1454,11 +1459,17 @@ begin
       pointerinfo.Anchors:=[akLeft,akTop, akRight];
 
       pointerinfo.OnResize:=PointerInfoResize;
+
+      pointerinfo.baseAddress.OnChange(pointerinfo.baseAddress);
+
     end;
 
     //editAddress.enabled:=false;
     editAddress.ReadOnly:=true;
-    editAddress.Color:=clInactiveBorder;
+    if ShouldAppsUseDarkMode() then
+      editAddress.Color:=$505050
+    else
+      editAddress.Color:=clInactiveBorder;
 
     btnOk.AnchorSideTop.Control:=pointerinfo;
     btnCancel.AnchorSideTop.Control:=pointerinfo;
@@ -1481,7 +1492,7 @@ begin
 
     //editAddress.enabled:=true;
     editAddress.ReadOnly:=false;
-    editAddress.Color:=clDefault;
+    editAddress.Color:=clWindow;
 
     if pointerinfo<>nil then
       freeandnil(pointerinfo);

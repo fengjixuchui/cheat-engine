@@ -13,10 +13,10 @@ uses
   windows, win32proc,
   {$endif}
   Classes, LCLProc, SysUtils, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, math,
-  StdCtrls, ComCtrls, Menus, lmessages, scrollTreeView, byteinterpreter, symbolhandler, symbolhandlerstructs, cefuncproc,
+  StdCtrls, ComCtrls, Menus, lmessages, byteinterpreter, symbolhandler, symbolhandlerstructs, cefuncproc,
   newkernelhandler, frmSelectionlistunit, frmStructuresConfigUnit, registry, Valuechange, DOM,
   XMLRead, XMLWrite, Clipbrd, CustomTypeHandler, strutils, dotnetpipe, DotNetTypes, commonTypeDefs,
-  contnrs, cvconst, frmStructuresNewStructureUnit;
+  contnrs, cvconst, frmStructuresNewStructureUnit, betterControls, scrollTreeView;
 
 
 const structureversion=2;
@@ -5085,7 +5085,7 @@ begin
 
   if node=nil then
   begin
-    sbSelection.SimpleText:='';
+    sbSelection.panels[0].Text:='';
   end
   else
   begin
@@ -5105,7 +5105,7 @@ begin
 
       s:=s+'=>'+inttohex(a,8);
 
-      sbSelection.SimpleText:=s;
+      sbSelection.panels[0].Text:=s;
     end;
   end;
 

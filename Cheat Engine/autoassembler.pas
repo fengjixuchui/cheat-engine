@@ -23,7 +23,7 @@ uses
    {$endif}
    Assemblerunit, classes, LCLIntf,symbolhandler, symbolhandlerstructs,
    sysutils,dialogs,controls, CEFuncProc, NewKernelHandler ,plugin,
-   ProcessHandlerUnit, lua, lualib, lauxlib, luaclass, commonTypeDefs, OpenSave;
+   ProcessHandlerUnit, lua, lualib, lauxlib, luaclass, commonTypeDefs, OpenSave, betterControls;
 
 
 {$endif}
@@ -1138,7 +1138,7 @@ begin
     end;
 
 
-  if error then raise exception.create(errorstring);
+  if error then raise EAutoAssembler.create(errorstring);
 
 
 end;

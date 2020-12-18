@@ -16,6 +16,7 @@ uses
   macport, macportdefines,coresymbolication, macexceptiondebuggerinterface,
   macCreateRemoteThread, macumm, machotkeys, macPipe,
   {$endif}
+  betterControls,
   controls, sysutils, Forms, LazUTF8, dialogs, SynCompletion, MainUnit,
   CEDebugger, NewKernelHandler, CEFuncProc, ProcessHandlerUnit, symbolhandler,
   Assemblerunit, hypermode, byteinterpreter, addressparser, autoassembler,
@@ -113,7 +114,8 @@ uses
   LuaDiagramLink, diagramlink, BreakpointTypeDef, frmFoundlistPreferencesUnit,
   LuaHeaderSections, frmDebuggerAttachTimeoutUnit, cheatecoins,
   frmMicrotransactionsUnit, frmSyntaxHighlighterEditor, LuaCustomImageList,
-  dotnethost, rttihelper, cefreetype, LuaDotNetPipe, LuaRemoteExecutor;
+  dotnethost, rttihelper, cefreetype, LuaDotNetPipe, LuaRemoteExecutor,
+  newRadioButton, newCheckbox, newbutton;
 
 {$R cheatengine.res}
 {$IFDEF windows}
@@ -278,6 +280,8 @@ begin
   outputdebugstring('start');
 
   Application.Initialize;
+
+  registerDarkModeHintHandler;
 
 
   overridefont:=nil;

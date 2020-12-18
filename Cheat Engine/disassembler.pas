@@ -14,7 +14,7 @@ uses unixporthelper, sysutils, byteinterpreter, symbolhandler, NewKernelHandler,
 {$ifdef windows}
 uses windows, imagehlp,sysutils,LCLIntf,byteinterpreter, symbolhandler, symbolhandlerstructs,
   CEFuncProc, NewKernelHandler, ProcessHandlerUnit, LastDisassembleData, disassemblerarm,
-  commonTypeDefs, maps, math,vextypedef;
+  commonTypeDefs, maps, math,vextypedef, betterControls;
 {$endif}
 
 {$ifdef darwin}
@@ -2943,7 +2943,7 @@ begin
                           else
                             lastdisassembledata.opcode:='cvtsi2sd';
 
-                          lastdisassembledata.parameters:=xmm(memory[2])+modrm(memory,prefix2,2,0,last,mRight);
+                          lastdisassembledata.parameters:=xmm(memory[2])+modrm(memory,prefix2,2,4,last,mRight);
 
                           inc(offset,last-1);
                         end
@@ -2957,7 +2957,7 @@ begin
                           else
                             lastdisassembledata.opcode:='cvtsi2ss';
 
-                          lastdisassembledata.parameters:=xmm(memory[2])+modrm(memory,prefix2,2,0,last,mRight);
+                          lastdisassembledata.parameters:=xmm(memory[2])+modrm(memory,prefix2,2,4,last,mRight);
 
                           inc(offset,last-1);
                         end

@@ -14,7 +14,7 @@ uses
   LCLIntf, LMessages, Messages, SysUtils, Classes, Graphics, Controls, Forms,
   Dialogs, StdCtrls, ComCtrls, ExtCtrls, LResources, EditBtn, Buttons, Contnrs,
   CEFuncProc, NewKernelHandler, symbolhandler, multilineinputqueryunit,
-  registry, resolve, math, PointerscanSettingsIPConnectionList, types, commonTypeDefs;
+  registry, resolve, math, PointerscanSettingsIPConnectionList, types, commonTypeDefs, betterControls;
 
 
 type
@@ -1301,6 +1301,7 @@ var
   i: integer;
   host, port: string;
 begin
+  panel3.color:=clWindow;
   ComboBox1.Items.Clear;
   with ComboBox1.items do
   begin

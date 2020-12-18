@@ -26,7 +26,7 @@ Additions and changes:
   Autoattach won't open itself anymore
   CEShare now has a list of all available tables
   Code Dissect now deals with relocated memory modules when loading a state back
-  
+  Lua Formula scan has an alternate scan option which allows for more than 1 thread
   
 
 Fixes:
@@ -66,6 +66,8 @@ lua:
 
   New functions: 
     printf   
+    setProgressState
+    setProgressValue
     string.split
     generateCodeInjectionScript
     generateAOBInjectgionScript
@@ -77,6 +79,8 @@ lua:
     getUserDocumentsPath
     getDotNetDataCollector
     injectDotNetDLL
+    debug_setBreakpointForThread
+    debug_breakThread
 
     TfrmLuaEngine:
       createLuaEngine     
@@ -111,6 +115,14 @@ lua:
         getBinaryValue
         setBinaryValue
 
+    Strings:
+      properties
+        Data
+
+      methods
+        getData
+        setData
+        addText
 
 
 
@@ -125,5 +137,5 @@ e-mail(msn) = dark_byte@hotmail.com
 
 
 For more information about Cheat Engine or tables for it 
-and other things, goto this url:
+and other things, go to this url:
 http://www.cheatengine.org/

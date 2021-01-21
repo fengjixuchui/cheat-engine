@@ -77,7 +77,7 @@ var
 
 implementation
 
-uses forms, controls, Registry;
+uses forms, controls, Registry, Win32Proc;
 
 var
   FHandle: THandle;
@@ -118,7 +118,6 @@ begin
   if UsesDarkMode=dmUnknown then
   begin
 
-
     reg:=TRegistry.Create;
     reg.RootKey:=HKEY_CURRENT_USER;
     if reg.OpenKey('Software\Microsoft\Windows\CurrentVersion\Themes\Personalize',false) then
@@ -148,10 +147,12 @@ begin
 
     if UsesDarkMode=dmUnknown then
     begin
-      if _ShouldAppsUseDarkMode() then
-        UsesDarkMode:=dmYes
-      else
-        UsesDarkMode:=dmNo;
+      UsesDarkMode:=dmNo;
+      if assigned(_ShouldAppsUseDarkMode) then
+      begin
+        if _ShouldAppsUseDarkMode() then
+          UsesDarkMode:=dmYes;
+      end;
     end;
   end;
 
@@ -167,7 +168,8 @@ type
 
 procedure TBCHintHandler.ShowHintEvent(var HintStr: string; var CanShow: Boolean; var HintInfo: THintInfo);
 begin
-  HintInfo.HintColor:=ColorSet.TextBackground;
+  if ShouldAppsUseDarkMode then
+    HintInfo.HintColor:=ColorSet.TextBackground;
 end;
 
 procedure registerDarkModeHintHandler;
@@ -183,61 +185,75 @@ var
 
 initialization
   //setup ColorSet
+
+  ColorSet.FontColor:=clWindowtext;
+  colorset.TextBackground:=clWindow;
+
+
   darkmodebuggy:=true;
   try
     currentColorSet:=ColorSet;
 
-    FHandle := LoadLibrary('uxtheme.dll');
-    if FHandle<>0 then
+    RefreshImmersiveColorPolicyState:=@RefreshImmersiveColorPolicyState_stub;
+    AllowDarkModeForWindow:=@AllowDarkModeForWindow_stub;
+    AllowDarkModeForApp:=@AllowDarkModeForApp_stub;
+    FlushMenuThemes:=@RefreshImmersiveColorPolicyState_stub;
+
+    if WindowsVersion>=wv10 then
     begin
-      @RefreshImmersiveColorPolicyState := GetProcAddress(FHandle, MakeIntResource(104));
-      @AllowDarkModeForWindow := GetProcAddress(FHandle, MakeIntResource(133));
-      @AllowDarkModeForApp := GetProcAddress(FHandle, MakeIntResource(135));
-      @FlushMenuThemes := GetProcAddress(FHandle, MakeIntResource(136));
-      @_ShouldAppsUseDarkMode := GetProcAddress(FHandle, MakeIntResource(132));
-    end;
-
-    if not assigned(RefreshImmersiveColorPolicyState) then RefreshImmersiveColorPolicyState:=@RefreshImmersiveColorPolicyState_stub;
-    if not assigned(AllowDarkModeForWindow) then AllowDarkModeForWindow:=@AllowDarkModeForWindow_stub;
-    if not assigned(AllowDarkModeForApp) then AllowDarkModeForApp:=@AllowDarkModeForApp_stub;
-    if not assigned(FlushMenuThemes) then FlushMenuThemes:=@RefreshImmersiveColorPolicyState_stub;
-
-    AllowDarkModeForApp(1);  //3 is disable, 2=force on, 1=system default
-
-
-    FlushMenuThemes;
-    RefreshImmersiveColorPolicyState;
-
-    darkmodebuggy:=false;
-
-    theme:=OpenThemeData(0,'ItemsView');
-    if theme<>0 then
-    begin
-      GetThemeColor(theme, 0,0,TMT_TEXTCOLOR,ColorSet.FontColor);
-      GetThemeColor(theme, 0,0,TMT_FILLCOLOR,ColorSet.TextBackground);
-      colorset.InactiveFontColor:=ColorSet.FontColor xor $aaaaaa;
-      ColorSet.ButtonBorderColor:=deccolor(ColorSet.FontColor,10);
-
-      clwindowText:=ColorSet.FontColor;
-
-      CloseThemeData(theme);
-
-      if ShouldAppsUseDarkMode() then
+      FHandle := LoadLibrary('uxtheme.dll');
+      if FHandle<>0 then
       begin
-        ColorSet.CheckboxFillColor:=$e8e8e8;
-        ColorSet.InactiveCheckboxFillColor:=$999999;
-        clBtnFace:=inccolor(ColorSet.TextBackground,8);
-        clBtnText:=ColorSet.FontColor;
+        @RefreshImmersiveColorPolicyState := GetProcAddress(FHandle, MakeIntResource(104));
+        @AllowDarkModeForWindow := GetProcAddress(FHandle, MakeIntResource(133));
+        @AllowDarkModeForApp := GetProcAddress(FHandle, MakeIntResource(135));
+        @FlushMenuThemes := GetProcAddress(FHandle, MakeIntResource(136));
+        @_ShouldAppsUseDarkMode := GetProcAddress(FHandle, MakeIntResource(132));
+      end;
 
-        clWindow:=colorset.TextBackground;
 
-        ColorSet.CheckboxCheckMarkColor:=InvertColor(ColorSet.CheckboxFillColor);
-        ColorSet.InactiveCheckboxCheckMarkColor:=InvertColor(ColorSet.CheckboxCheckMarkColor);
+      if not assigned(RefreshImmersiveColorPolicyState) then RefreshImmersiveColorPolicyState:=@RefreshImmersiveColorPolicyState_stub;
+      if not assigned(AllowDarkModeForWindow) then AllowDarkModeForWindow:=@AllowDarkModeForWindow_stub;
+      if not assigned(AllowDarkModeForApp) then AllowDarkModeForApp:=@AllowDarkModeForApp_stub;
+      if not assigned(FlushMenuThemes) then FlushMenuThemes:=@RefreshImmersiveColorPolicyState_stub;
 
-        darkmodestring:=' dark';
+
+      AllowDarkModeForApp(1);  //3 is disable, 2=force on, 1=system default
+
+
+      FlushMenuThemes;
+      RefreshImmersiveColorPolicyState;
+
+      darkmodebuggy:=false;
+
+      theme:=OpenThemeData(0,'ItemsView');
+      if theme<>0 then
+      begin
+        GetThemeColor(theme, 0,0,TMT_TEXTCOLOR,ColorSet.FontColor);
+        GetThemeColor(theme, 0,0,TMT_FILLCOLOR,ColorSet.TextBackground);
+        colorset.InactiveFontColor:=ColorSet.FontColor xor $aaaaaa;
+        ColorSet.ButtonBorderColor:=deccolor(ColorSet.FontColor,10);
+
+        clwindowText:=ColorSet.FontColor;
+
+        CloseThemeData(theme);
+
+        if ShouldAppsUseDarkMode() then
+        begin
+          ColorSet.CheckboxFillColor:=$e8e8e8;
+          ColorSet.InactiveCheckboxFillColor:=$999999;
+          clBtnFace:=inccolor(ColorSet.TextBackground,8);
+          clBtnText:=ColorSet.FontColor;
+
+          clWindow:=colorset.TextBackground;
+
+          ColorSet.CheckboxCheckMarkColor:=InvertColor(ColorSet.CheckboxFillColor);
+          ColorSet.InactiveCheckboxCheckMarkColor:=InvertColor(ColorSet.CheckboxCheckMarkColor);
+
+          darkmodestring:=' dark';
+        end;
       end;
     end;
-
 
 
   except

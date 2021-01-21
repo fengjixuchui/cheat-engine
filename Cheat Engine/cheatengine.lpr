@@ -115,11 +115,11 @@ uses
   LuaHeaderSections, frmDebuggerAttachTimeoutUnit, cheatecoins,
   frmMicrotransactionsUnit, frmSyntaxHighlighterEditor, LuaCustomImageList,
   dotnethost, rttihelper, cefreetype, LuaDotNetPipe, LuaRemoteExecutor,
-  newRadioButton, newCheckbox, newbutton;
+  newRadioButton, newCheckbox, newbutton, autoassemblercode;
 
 {$R cheatengine.res}
 {$IFDEF windows}
-{$R manifest.res}  //lazarus now has this build in (but sucks as it explicitly turns of dpi aware)
+//{$R manifest.res}  //lazarus now has this build in (but sucks as it explicitly turns of dpi aware)
 //{$R Sounds.rc}
 //{$R images.rc}
 {$ifdef cpu32}

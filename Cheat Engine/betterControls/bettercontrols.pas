@@ -9,7 +9,7 @@ uses
   newEdit, newMainMenu, newForm, newListBox, newProgressBar, newMemo, newComboBox,
   newGroupBox, newSpeedButton, newTreeView, newHeaderControl, newScrollBar,
   newScrollBox, newSynEdit, newPageControl, newtabcontrol, newStatusBar,
-  newCheckListBox, newCheckGroup, newColorBox, newDirectoryEdit,
+  newCheckListBox, newCheckGroup, newColorBox, newDirectoryEdit, NewHintwindow,
   Graphics, Themes, UxTheme, bettercontrolColorSet;
 
 type
@@ -39,6 +39,8 @@ type
   TCheckGroup=class(TNewCheckGroup);  //not fully yet (too limited)
   TColorBox=class(TNewColorBox);
   TDirectoryEdit=class(TNewDirectoryEdit);
+  THintWindow=class(TNewHintwindow);
+  THintWindowClass =class of TNewHintwindow;
 
 var
   globalCustomDraw: boolean;
@@ -182,6 +184,8 @@ end;
 var
   c: TColorRef;
   theme: THandle;
+  i: integer;
+  reg: TRegistry;
 
 initialization
   //setup ColorSet
@@ -198,6 +202,22 @@ initialization
     AllowDarkModeForWindow:=@AllowDarkModeForWindow_stub;
     AllowDarkModeForApp:=@AllowDarkModeForApp_stub;
     FlushMenuThemes:=@RefreshImmersiveColorPolicyState_stub;
+
+    for i:=1 to Paramcount do
+      if uppercase(ParamStr(i))='NOTDARK' then exit;
+
+    reg:=tregistry.create;
+    try
+      Reg.RootKey := HKEY_CURRENT_USER;
+      if Reg.OpenKey('\Software\Cheat Engine',false) then
+      begin
+        if reg.ValueExists('Disable DarkMode Support') and
+           reg.ReadBool('Disable DarkMode Support') then exit;
+      end;
+    finally
+      reg.free;
+    end;
+
 
     if WindowsVersion>=wv10 then
     begin

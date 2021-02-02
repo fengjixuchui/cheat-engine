@@ -1,19 +1,12 @@
 Mac: Hex editing files
 
-implement ceinternal_autofree
-custom types: c implementation
+add {$C#-code} sections and {$C#} blocks (which end up as injected dll's)
 
-code filter: Use dissect code call list as another option to fill the list
+{$luacode} might like the allocated memory addresses afterwards  (perhaps generate a table with these variables inside the ref can later be filled in)
 
-dark mode:
-  finds what writes description is black text on black background
 
-dpi: 
-  Process window is kinda 'meh' on new install
-  find what writes too small
-  
+DBVM: Add a "start record all PA access"  "stop record all PA access" which records the PA, VA, CR3, CS:RIP for each access
 
-memview: Also save the width of the hexview when debugging is enabled
 
 'sub rsp,20+(4*8)+(6*8)'
 set value to -888,12  (not -888.12) and see what happens

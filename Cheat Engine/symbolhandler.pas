@@ -49,7 +49,9 @@ type TMemoryregions = array of tmemoryregion;
 
 
 
-type TUserdefinedSymbolCallback=procedure;
+type
+  TUserdefinedSymbolCallbackPart=(suUserdefinedSymbol, suSymbolList);
+  TUserdefinedSymbolCallback=procedure(item: TUserdefinedSymbolCallbackPart=suUserdefinedSymbol);
 
 
 type
@@ -366,6 +368,7 @@ type
 
     procedure AddSymbolList(sl: TSymbolListHandler);
     procedure RemoveSymbolList(sl: TSymbolListHandler);
+    procedure GetSymbolLists(list: TList);
 
     procedure NotifyFinishedLoadingSymbols; //go through the list of functions to call when the symbollist has finished loading
     constructor create;
@@ -3655,6 +3658,7 @@ begin
   end;
 end;
 
+
 procedure TSymhandler.AddUserdefinedSymbol(addressstring: string; symbolname: string; DoNotSave: Boolean=false);
 {
 This routine will add the symbolname+address combination to the symbollist
@@ -4070,7 +4074,7 @@ begin
   //then check secondary symbollists
   symbollistsMREW.Beginread;
   try
-    for i:=0 to length(symbollists)-1 do
+    for i:=length(symbollists)-1 downto 0 do
     begin
       s:=symbollists[i].FindSymbol(name);
 
@@ -5819,6 +5823,9 @@ begin
 
     setlength(symbollists, length(symbollists)+1);
     symbollists[length(symbollists)-1]:=sl;
+
+    if assigned(UserdefinedSymbolCallback) then
+      UserdefinedSymbolCallback(suSymbolList);
   finally
     symbollistsMREW.Endwrite;
   end;
@@ -5838,11 +5845,19 @@ begin
         setlength(symbollists, length(symbollists)-1);
       end;
 
+    if assigned(UserdefinedSymbolCallback) then
+      UserdefinedSymbolCallback(suSymbolList);
   finally
     symbollistsMREW.Endwrite;
   end;
 end;
 
+procedure TSymhandler.GetSymbolLists(list: TList);
+var i: integer;
+begin
+  for i:=0 to length(symbollists)-1 do
+    list.add(symbollists[i]);
+end;
 
 procedure TSymhandler.AddFinishedLoadingSymbolsNotification(n: TNotifyEvent); //there is no remove
 begin

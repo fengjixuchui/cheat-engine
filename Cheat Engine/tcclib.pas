@@ -17,6 +17,18 @@ type
   {$endif}
 
 
+  TTCCMemorystream=class(TMemoryStream)
+  private
+    base: ptruint; //this unit owns the TTCCMemorystream so it can access base no problem, the caller units not so much
+  protected
+    function Realloc(var NewCapacity: PtrInt): Pointer; override;
+  public
+  end;
+
+
+
+
+
   TTCC=class(TObject)
   private
     cs: TCriticalSection; static;
@@ -29,7 +41,7 @@ type
     add_include_path: procedure(s: PTCCState; path: pchar); cdecl;
     set_error_func:procedure(s: PTCCState; error_opaque: pointer; functionToCall: pointer); cdecl;
     set_symbol_lookup_func:procedure(s:PTCCState; userdata: pointer; functionToCall: pointer); cdecl;
-    set_binary_writer_func:procedure(s:PTCCState; param: pointer; functionToCall: pointer); cdecl;
+    set_binary_writer_func:procedure(s:PTCCState; userdata: pointer; functionToCall: pointer); cdecl;
 
     set_output_type:function(s: PTCCState; output_type: integer): integer; cdecl;
     compile_string:function(s: PTCCState; buf: pchar): integer; cdecl;
@@ -42,9 +54,14 @@ type
     add_file:function(s: PTCCState; filename: pchar): integer; cdecl;
     output_file:function(s: PTCCState; filename: pchar): integer; cdecl;
 
-    procedure setupCompileEnvironment(s: PTCCState; address: ptruint; output: tstream; textlog: tstrings; targetself: boolean=false);
+    relocate:function(s: PTCCState; address: ptruint): integer; //address=0 gets size, address=1 let's tcc decide (nope) address>1 write there using the binary writer
+
+
+    add_symbol:function(s: PTCCState; name: pchar; val: pointer): integer; cdecl;
+
+    procedure setupCompileEnvironment(s: PTCCState; textlog: tstrings; targetself: boolean=false);
   public
-    function testcompileScript(script: string; var bytesize: integer; referencedSymbols: TStrings; textlog: tstrings=nil; targetself: boolean=false): boolean;
+    function testcompileScript(script: string; var bytesize: integer; referencedSymbols: TStrings; symbols: TStrings; textlog: tstrings=nil): boolean;
     function compileScript(script: string; address: ptruint; output: tstream; symbollist: TSymbolListHandler; textlog: tstrings=nil; secondaryLookupList: tstrings=nil; targetself: boolean=false): boolean;
     function compileScripts(scripts: tstrings; address: ptruint; output: tstream; symbollist: TSymbolListHandler; textlog: tstrings=nil; targetself: boolean=false): boolean;
     function compileProject(files: tstrings; address: ptruint; output: tstream; symbollist: TSymbolListHandler; textlog: tstrings=nil; targetself: boolean=false): boolean;
@@ -54,10 +71,11 @@ type
 
 
   function tcc: TTCC;
+  function tccself: TTCC;
 
 implementation
 
-uses forms,dialogs{$ifndef standalonetest}, symbolhandler, ProcessHandlerUnit{$endif};
+uses forms,dialogs{$ifndef standalonetest}, symbolhandler, ProcessHandlerUnit, newkernelhandler{$endif};
 const
   TCC_RELOCATE_AUTO=pointer(1); //relocate
   TCC_OUTPUT_MEMORY  = 1; { output will be run in memory (default) }
@@ -89,8 +107,35 @@ begin
   {$endif}
 end;
 
+function tccself: TTCC;
+begin
+  {$ifdef cpu64}
+  result:=tcc64;
+  {$else}
+  result:=tcc32;
+  {$endif}
+end;
+
+function TTCCMemorystream.Realloc(var NewCapacity: PtrInt): Pointer;
+var
+  oldcapacity: PtrInt;
+  p: pbytearray;
+begin
+  oldCapacity:=Capacity;
+  result:=inherited ReAlloc(NewCapacity);
+
+  if newCapacity>oldcapacity then
+  begin
+    p:=Memory;
+    zeromemory(@p^[oldcapacity], newCapacity-oldcapacity);
+  end;
+end;
+
+
+
 constructor TTCC.create(target: TTCCTarget);
-var module: HModule;
+var
+  module: HModule;
 begin
   if initDone=true then raise exception.create('Do not create more compilers after init');
   if cs=nil then
@@ -105,10 +150,9 @@ begin
   else
     module:=loadlibrary({$ifdef standalonetest}'D:\git\cheat-engine\Cheat Engine\bin\'+{$endif}'tcc64-32.dll'); //generates 32-bit code
   {$endif}
-
+  working:=false;
 
   pointer(new):=GetProcAddress(module,'tcc_new');
-
   pointer(parse_args):=GetProcAddress(module,'tcc_parse_args');
   pointer(set_options):=GetProcAddress(module,'tcc_set_options');
   pointer(set_lib_path):=GetProcAddress(module,'tcc_set_lib_path');
@@ -120,12 +164,14 @@ begin
   pointer(set_binary_writer_func):=GetProcAddress(module,'tcc_set_binary_writer_func');
   pointer(compile_string):=GetProcAddress(module,'tcc_compile_string');
 
+  pointer(add_symbol):=GetProcAddress(module,'tcc_add_symbol');
   pointer(add_file):=GetProcAddress(module,'tcc_add_file');
   pointer(output_file):=GetProcAddress(module,'tcc_output_file');
-
+  pointer(relocate):=GetProcAddress(module,'tcc_relocate');
   pointer(get_symbol):=GetProcAddress(module,'tcc_get_symbol');
   pointer(get_symbols):=GetProcAddress(module,'tcc_get_symbols');
   pointer(delete):=GetProcAddress(module,'tcc_delete');
+
 
   working:=(module<>0) and
            assigned(new) and
@@ -138,6 +184,9 @@ end;
 
 procedure ErrorLogger(opaque: pointer; msg: pchar); cdecl;
 begin
+  {$ifdef standalonetest}
+  showmessage(msg);
+  {$endif}
   tstrings(opaque).Add(msg);
 end;
 
@@ -169,6 +218,7 @@ begin
   {$endif}
 end;
 
+{$ifndef standalonetest}
 function symbolLookupFunctionSelf(secondaryLookup: tstrings; name: pchar): pointer; cdecl;
 var
   error: boolean;
@@ -186,57 +236,129 @@ begin
   result:=pointer(selfsymhandler.GetAddressFromName(name,true,error));
 
 end;
+{$endif}
 
-procedure Writer(output: TStream; data: pointer; size: integer);  cdecl;
+
+procedure SelfWriter(userdata: tobject; address: ptruint; data: pointer; size: integer);  cdecl; //writes to the local process
 begin
-  output.Write(data^,size);
+  CopyMemory(pointer(address), data, size);
+end;
+
+procedure NullWriter(userdata: tobject; address: ptruint; data: pointer; size: integer);  cdecl; //writes nothing
+begin
+end;
+
+procedure TCCMemorystreamWriter(m: TTCCMemorystream; address: ptruint; data: pointer; size: integer);  cdecl; //Writes to a TTCCMemorystreamWriter based on the base address stored within
+begin
+  m.position:=address-m.base;
+  m.WriteBuffer(data^,size);
+end;
+
+{$ifndef standalonetest}
+procedure MemoryWriter(userdata: tobject; address: ptruint; data: pointer; size: integer);  cdecl; //Writes directly to the target process memory
+var bw: size_t;
+begin
+  WriteProcessMemory(processhandle,pointer(address),data,size,bw);
+end;
+{$endif}
+
+procedure simplesymbolCallback(sl: TStrings; address: qword; name: pchar); cdecl;
+var s: string;
+begin
+  if (length(name)>=4) then  //strip not so useful symbols
+  begin
+    case name[0] of
+      '.': if name='.uw_base' then exit;
+      '_':
+      begin
+
+        case name[1] of
+          'e': if (name = '_etext') or (name='_edata') or (name='_end') then exit;
+          '_':
+          begin
+            s:=name;
+            if s.EndsWith('array_start') or s.EndsWith('array_end') then exit;
+          end;
+        end;
+      end;
+    end;
+  end;
+
+  {$ifndef standalonetest}
+  if sl<>nil then
+  begin
+    if (not ((length(name)>2) and (name[0]='_') and (name[1]='e'))) then  //no _e* symbols
+      sl.add(name); //not interested in the address
+  end;
+
+  {$else}
+
+  showmessage(inttohex(address,8)+' - '+name);
+  {$endif}
 end;
 
 procedure symbolCallback(sl: TSymbolListHandler; address: qword; name: pchar); cdecl;
+var s: string;
 begin
+
+  if (length(name)>=4) then
+  begin
+    case name[0] of
+      '.': if name='.uw_base' then exit;
+      '_':
+      begin
+
+        case name[1] of
+          'e': if (name = '_etext') or (name='_edata') or (name='_end') then exit;
+          '_':
+          begin
+            s:=name;
+            if s.EndsWith('array_start') or s.EndsWith('array_end') then exit;
+          end;
+        end;
+      end;
+    end;
+  end;
+
   {$ifndef standalonetest}
-  if sl<>nil then sl.AddSymbol('',name,address,1);
+  if sl<>nil then
+    sl.AddSymbol('',name,address,1);
+
   {$else}
   showmessage(inttohex(address,8)+' - '+name);
   {$endif}
-
-
 end;
 
-procedure ttcc.setupCompileEnvironment(s: PTCCState; address: ptruint; output: tstream; textlog: tstrings; targetself: boolean=false);
-var
-  str: string;
-  args: pchar;
-
-  p1: pointer;
-  count: integer;
-
-  sarr: array of pchar;
-  i: integer;
+procedure ttcc.setupCompileEnvironment(s: PTCCState; textlog: tstrings; targetself: boolean=false);
 begin
-  add_include_path(s,'include');
-  add_include_path(s,'include\winapi');
-  add_include_path(s,'include\sys');
+  add_include_path(s,{$ifdef standalonetest}'D:\git\cheat-engine\Cheat Engine\bin\'+{$endif}'include');
+  add_include_path(s,{$ifdef standalonetest}'D:\git\cheat-engine\Cheat Engine\bin\'+{$endif}'include\winapi');
+  add_include_path(s,{$ifdef standalonetest}'D:\git\cheat-engine\Cheat Engine\bin\'+{$endif}'include\sys');
   add_include_path(s,pchar(ExtractFilePath(application.exename)+'include'));
   add_include_path(s,pchar(ExtractFilePath(application.exename)+'include\winapi'));
   add_include_path(s,pchar(ExtractFilePath(application.exename)+'include\sys'));
 
-  if address=0 then
-    set_options(s,pchar('-nostdlib -static -Wl,-section-alignment=4 -Wl,-oformat=binary -skip_unwind '))
-  else
-    set_options(s,pchar('-nostdlib -static -Wl,-image-base=0x'+inttohex(address,1)+' -Wl,-section-alignment=4 -Wl,-oformat=binary -skip_unwind'));
+
+
+
+ // add_include_path(s,'D:\git\cheat-engine\Cheat Engine\bin\include');
+
 
   if textlog<>nil then set_error_func(s,textlog,@ErrorLogger);
 
+  set_options(s,'-nostdlib Wl,-section-alignment=4');
+  set_output_type(s,TCC_OUTPUT_MEMORY);
+
+
+{$ifndef standalonetest}
   if targetself then
     set_symbol_lookup_func(s,nil,@symbolLookupFunctionSelf)
   else
+{$endif}
     set_symbol_lookup_func(s,nil,@symbolLookupFunction);
-
-  set_binary_writer_func(s,output,@Writer);
 end;
 
-function ttcc.testcompileScript(script: string; var bytesize: integer; referencedSymbols: TStrings; textlog: tstrings=nil; targetself: boolean=false): boolean;
+function ttcc.testcompileScript(script: string; var bytesize: integer; referencedSymbols: TStrings; symbols: TStrings; textlog: tstrings=nil): boolean;
 var s: PTCCState;
   r: pointer;
   ms: Tmemorystream;
@@ -253,14 +375,20 @@ begin
   s:=new();
   ms:=tmemorystream.create;
   try
+    setupCompileEnvironment(s, textlog);
 
-    setupCompileEnvironment(s,$00400000, ms, textlog);
+    set_binary_writer_func(s,nil,@NullWriter);
     set_symbol_lookup_func(s,referencedSymbols, @symbolLookupFunctionTestCompile);
 
     if compile_string(s,pchar(script))=-1 then exit(false);
-    if output_file(s,nil)=-1 then exit(false);
+    bytesize:=relocate(s,0);
+    if bytesize<=0 then exit(false);
 
-    bytesize:=ms.Size;
+    relocate(s,$00400000);
+
+    if symbols<>nil then
+      get_symbols(s, symbols, @simplesymbolCallback);
+
 
     result:=true;
   finally
@@ -275,6 +403,9 @@ end;
 function ttcc.compileScript(script: string; address: ptruint; output: tstream; symbollist: TSymbolListHandler; textlog: tstrings=nil; secondaryLookupList: tstrings=nil; targetself: boolean=false): boolean;
 var s: PTCCState;
   r: pointer;
+
+  size: integer;
+  tms: TTCCMemorystream=nil;
 begin
   result:=false;
   if not working then
@@ -283,25 +414,53 @@ begin
     exit(false);
   end;
 
+  if address=0 then
+  begin
+    if textlog<>nil then textlog.add('Can not compile at address 0');
+    exit(false);
+  end;
+
 
   cs.enter;
   s:=new();
   try
-    setupCompileEnvironment(s,address, output, textlog, targetself);
+    setupCompileEnvironment(s, textlog, targetself);
+
+    if output is TTCCMemorystream then
+      tms:=TTCCMemorystream(output)
+    else
+      tms:=TTCCMemorystream.create;
+
+    tms.base:=address;
+
+    set_binary_writer_func(s,tms,@TCCMemorystreamWriter);
+
     if secondaryLookupList<>nil then   //AA scripts can provide some extra addresses
       set_symbol_lookup_func(s,secondaryLookupList, @symbolLookupFunction);
 
     if compile_string(s,pchar(script))=-1 then exit(false);
-    if output_file(s,nil)=-1 then exit(false);
 
-    //still alive, get the symbols
+    if relocate(s,0)=-1 then exit(false);
+    if relocate(s,address)=-1 then exit(false);
+
+    {$ifndef standalonetest}
     if symbollist<>nil then
+    {$endif}
       get_symbols(s, symbollist, @symbolCallback);
+
+    if (output is TTCCMemorystream)=false then
+    begin
+      tms.position:=0;
+      tms.SaveToStream(output);
+    end;
 
     result:=true;
   finally
     delete(s);
     cs.leave;
+
+    if (tms<>nil) and ((output is TTCCMemorystream)=false) then
+      tms.free;
   end;
 end;
 
@@ -309,6 +468,7 @@ function ttcc.compileScripts(scripts: tstrings; address: ptruint; output: tstrea
 var
   s: PTCCState;
   i: integer;
+  tms: TTCCMemorystream=nil;
 begin
   result:=false;
   if not working then
@@ -317,23 +477,51 @@ begin
     exit(false);
   end;
 
+  if address=0 then
+  begin
+    if textlog<>nil then textlog.add('Can not compile at address 0');
+    exit(false);
+  end;
+
   cs.enter;
   s:=new();
   try
-    setupCompileEnvironment(s,address, output, textlog, targetself);
+    setupCompileEnvironment(s, textlog, targetself);
+
+    if output is TTCCMemorystream then
+      tms:=TTCCMemorystream(output)
+    else
+      tms:=TTCCMemorystream.create;
+
+    tms.base:=address;
+
+    set_binary_writer_func(s,tms,@TCCMemorystreamWriter);
+
+
     for i:=0 to scripts.count-1 do
       if compile_string(s,pchar(scripts[i]))=-1 then exit(false);
 
-    if output_file(s,nil)=-1 then exit(false);
+
+    if relocate(s,0)=-1 then exit(false);
+    if relocate(s,address)=-1 then exit(false);
 
     //still alive, get the symbols
     if symbollist<>nil then
       get_symbols(s, symbollist, @symbolCallback);
 
+    if (output is TTCCMemorystream)=false then
+    begin
+      tms.position:=0;
+      tms.SaveToStream(output);
+    end;
+
     result:=true;
   finally
     delete(s);
     cs.leave;
+
+    if (tms<>nil) and ((output is TTCCMemorystream)=false) then
+      tms.free;
   end;
 
 end;
@@ -343,6 +531,7 @@ function ttcc.compileProject(files: tstrings; address: ptruint; output: tstream;
 var
   s: PTCCState;
   i: integer;
+  tms: TTCCMemorystream=nil;
 begin
   result:=false;
   if not working then
@@ -351,23 +540,51 @@ begin
     exit(false);
   end;
 
+  if address=0 then
+  begin
+    if textlog<>nil then textlog.add('Can not compile at address 0');
+    exit(false);
+  end;
+
   cs.enter;
   s:=new();
   try
-    setupCompileEnvironment(s,address, output, textlog, targetself);
+    setupCompileEnvironment(s, textlog, targetself);
+
+    if output is TTCCMemorystream then
+      tms:=TTCCMemorystream(output)
+    else
+      tms:=TTCCMemorystream.create;
+
+    tms.base:=address;
+
+    set_binary_writer_func(s,tms,@TCCMemorystreamWriter);
+
     for i:=0 to files.count-1 do
       if add_file(s, pchar(files[i]))=-1 then exit(false);
 
-    if output_file(s,nil)=-1 then exit(false);
+    if relocate(s,0)=-1 then exit(false);
+    if relocate(s,address)=-1 then exit(false);
+
 
     //still alive, get the symbols
     if symbollist<>nil then
       get_symbols(s, symbollist, @symbolCallback);
 
+    if (output is TTCCMemorystream)=false then
+    begin
+      tms.position:=0;
+      tms.SaveToStream(output);
+    end;
+
+
     result:=true;
   finally
     delete(s);
     cs.leave;
+
+    if (tms<>nil) and ((output is TTCCMemorystream)=false) then
+      tms.free;
   end;
 
 end;
@@ -377,11 +594,14 @@ function initTCCLib: boolean;
 begin
   {$ifndef standalonetest}
   tcc32:=ttcc.create(i386);
-  {$endif}
+ {$endif}
+
   {$ifdef cpu64}
   tcc64:=ttcc.create(x86_64);
   {$endif}
+
   initDone:=true;
+  result:=initdone;
 end;
 
 initialization

@@ -65,6 +65,7 @@ MONOCMD_SETSTATICFIELDVALUE=41
 MONOCMD_GETCLASSIMAGE=42
 MONOCMD_FREE=43
 MONOCMD_GETIMAGEFILENAME=44
+MONOCMD_GETCLASSNESTINGTYPE=45
 
 
 MONO_TYPE_END        = 0x00       -- End of List
@@ -688,8 +689,13 @@ function mono_addressLookupCallback(address)
       if namespace~='' then
         namespace=namespace..':'
       end
-
-      result=namespace..classname..":"..mono_method_getName(ji.method)
+      
+      if mono_class_getNestingType(class) then
+        result=mono_class_getFullName(class)..":"..mono_method_getName(ji.method)            
+      else
+        result=namespace..classname..":"..mono_method_getName(ji.method)      
+      end      
+      
       if address~=ji.code_start then
         result=result..string.format("+%x",address-ji.code_start)
       end
@@ -980,7 +986,25 @@ function mono_isil2cpp(class)
   result=monopipe.readByte()==1
 
   monopipe.unlock()
-  return result;
+  return result
+end
+
+
+function mono_class_getNestingType(class)
+  --returns the parent class if nested. 0 if not nested
+  local result
+  monopipe.lock()
+  monopipe.writeByte(MONOCMD_GETCLASSNESTINGTYPE)  
+  monopipe.writeQword(class)
+  result=monopipe.readQword()
+  if monopipe==nil then
+    print("mono_class_getNestingType crashed:")
+    print(debug.traceback())
+    return nil
+  end
+  monopipe.unlock()
+  
+  return result
 end
 
 function mono_class_getName(class)
@@ -1000,7 +1024,7 @@ function mono_class_getName(class)
 
     monopipe.unlock()
   end
-  return result;
+  return result
 end
 
 
@@ -1739,6 +1763,15 @@ function mono_findClass(namespace, classname)
 
 --searches all images for a specific class
  -- print(string.format("mono_findClass: namespace=%s classname=%s", namespace, classname))
+  local i
+  if namespace and classname==nil then  --user forgot namespace    
+    classname=namespace
+    namespace=''
+  end
+  
+  if namespace==nil or classname==nil then
+    return nil,'invalid parameters'
+  end
 
   local ass=mono_enumAssemblies()
   local result
@@ -1791,6 +1824,17 @@ end
 
 function mono_findMethod(namespace, classname, methodname)
   --if debug_canBreak() then return nil end
+  if methodname==nil then
+    if namespace and classname then
+      methodname=classname
+      classname=namespace
+      namespace=''
+    end  
+  end
+  
+  if namespace==nil or classname==nil or methodname==nil then
+    return nil,'invalid parameters'
+  end
 
   local class=mono_findClass(namespace, classname)
   local result=0
@@ -1802,7 +1846,7 @@ function mono_findMethod(namespace, classname, methodname)
 end
 
 
-function mono_class_findMethodByDesc(image, methoddesc)
+function mono_image_findMethodByDesc(image, methoddesc)
   --if debug_canBreak() then return nil end
 
   if image==nil then return 0 end
@@ -1821,18 +1865,37 @@ function mono_class_findMethodByDesc(image, methoddesc)
 
   return result
 end
+mono_class_findMethodByDesc=mono_image_findMethodByDesc --for old scripts that use this when it was wrongly named
+
 
 function mono_findMethodByDesc(assemblyname, methoddesc)
   --if debug_canBreak() then return nil end
+  if assemblyname==nil then return nil,'assemblyname is nil' end  
+  if methoddesc==nil then return nil,'methoddesc is nil' end
+
   local assemblies = mono_enumAssemblies()
+  if assemblies==nil then return nil, 'no assemblies' end
+  local i
+
   for i=1, #assemblies do
     local image = mono_getImageFromAssembly(assemblies[i])
     local imagename = mono_image_get_name(image)
     if imagename == assemblyname then
-      return mono_class_findMethodByDesc(image, methoddesc)  
+      return mono_image_findMethodByDesc(image, methoddesc)  
     end      
   end
+  
+  --still here, try case insensitive assembly names
+  assemblyname=assemblyname:lower()
+  for i=1, #assemblies do
+    local image = mono_getImageFromAssembly(assemblies[i])
+    local imagename = mono_image_get_name(image):lower()
+    if imagename == assemblyname then
+      return mono_image_findMethodByDesc(image, methoddesc)  
+    end      
+  end  
   return nil
+  
 end
 
 

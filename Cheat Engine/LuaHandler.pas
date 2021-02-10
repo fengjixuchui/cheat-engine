@@ -2650,14 +2650,12 @@ function autoAssemble_lua(L: PLua_State): integer; cdecl;
 var
   parameters: integer;
   code: TStringlist=nil;
-  registeredsymbols: TStringlist=nil;
-  ccodesymbols: TSymbolListHandler=nil;
+
+  disableinfo: TDisableInfo;
 
   r: boolean;
   targetself: boolean;
-  CEAllocArray: TCEAllocArray;
 
-  exceptionlist: TCEExceptionListArray;
 
   i: integer;
 
@@ -2682,10 +2680,9 @@ begin
     exit;
   end;
 
-  setlength(CEAllocArray,0);
-
   code:=tstringlist.create;
-  registeredsymbols:=tstringlist.create;
+
+  disableinfo:=TDisableInfo.create;
 
   try
     code.text:=lua_tostring(L, 1);
@@ -2711,39 +2708,39 @@ begin
           enable:=false;
           lua_pushstring(L,'allocs');
           lua_gettable(L,disableInfoIndex);
-          if lua_isnil(L,disableInfoIndex+1)=false then
+          if lua_isnil(L,-1)=false then
           begin
-            if lua_istable(L,disableInfoIndex+1)=false then raise exception.create('Corrupt disableInfo section at the allocs side');
+            if lua_istable(L,-1)=false then raise exception.create('Corrupt disableInfo section at the allocs side');
             //enum all the entries
 
-            lua_pushnil(L);
-            while lua_next(L, disableInfoIndex+1)<>0 do
+            lua_pushnil(L);   //allocs table at -2
+            while lua_next(L, -2)<>0 do
             begin
-              i:=length(CEAllocArray);
-              setlength(ceallocarray,i+1);
+              i:=length(disableinfo.allocs);
+              setlength(disableinfo.allocs,i+1);
 
-              CEAllocArray[i].varname:=Lua_ToString(L,-2);
+              disableinfo.Allocs[i].varname:=Lua_ToString(L,-2);
 
               tableindex:=lua_gettop(L);
 
               lua_pushstring(L,'address');
               lua_gettable(L,tableindex);
-              if lua_isnumber(L,-1)=false then raise exception.create('Corrupt disableInfo section at '+CEAllocArray[i].varname+'.address');
-              CEAllocArray[i].address:=lua_tointeger(L,-1);
+              if lua_isnumber(L,-1)=false then raise exception.create('Corrupt disableInfo section at '+disableinfo.allocs[i].varname+'.address');
+              disableinfo.allocs[i].address:=lua_tointeger(L,-1);
               lua_pop(L,1);
 
               lua_pushstring(L,'size');
               lua_gettable(L,tableindex);
-              if lua_isnumber(L,-1)=false then raise exception.create('Corrupt disableInfo section at '+CEAllocArray[i].varname+'.size');
-              CEAllocArray[i].size:=lua_tointeger(L,-1);
+              if lua_isnumber(L,-1)=false then raise exception.create('Corrupt disableInfo section at '+disableinfo.Allocs[i].varname+'.size');
+              disableinfo.Allocs[i].size:=lua_tointeger(L,-1);
               lua_pop(L,1);
 
               lua_pushstring(L,'prefered');
               lua_gettable(L,tableindex);
               if lua_isnil(L,-1)=false then
               begin
-                if lua_isnumber(L,-1)=false then raise exception.create('Corrupt disableInfo section at '+CEAllocArray[i].varname+'.prefered');
-                CEAllocArray[i].size:=lua_tointeger(L,-1);
+                if lua_isnumber(L,-1)=false then raise exception.create('Corrupt disableInfo section at '+disableinfo.Allocs[i].varname+'.prefered');
+                disableinfo.Allocs[i].prefered:=lua_tointeger(L,-1);
               end;
               lua_pop(L,1);
 
@@ -2760,7 +2757,7 @@ begin
             lua_pushnil(L);
             while lua_next(L, disableInfoIndex+1)<>0 do
             begin
-              registeredsymbols.Add(Lua_ToString(L,-1));
+              disableinfo.registeredsymbols.Add(Lua_ToString(L,-1));
               lua_pop(L,1);
             end;
           end;
@@ -2771,7 +2768,8 @@ begin
           lua_gettable(L,disableInfoIndex);
           if not lua_isnil(L,-1) then
           begin
-            ccodesymbols:=lua_ToCEUserData(L,-1);
+            disableinfo.ccodesymbols.free;
+            disableinfo.ccodesymbols:=lua_ToCEUserData(L,-1);
             lua_pop(L,1);
           end;
 
@@ -2781,16 +2779,33 @@ begin
           begin
             if lua_istable(L,-1)=false then raise exception.create('Corrupt disableInfo section at the exceptionlist side');
 
-            setlength(exceptionlist, lua_objlen(L,-1));
+            setlength(disableinfo.exceptions, lua_objlen(L,-1));
 
-            for i:=1 to length(exceptionlist) do
+            for i:=1 to length(disableinfo.exceptions) do
             begin
               lua_pushinteger(L,i);
               lua_gettable(L,-2);
-              exceptionlist[i-1]:=lua_tointeger(L,-1);
+              disableinfo.exceptions[i-1]:=lua_tointeger(L,-1);
               lua_pop(L,1);
             end;
           end;
+          lua_pop(L,1); //pop exceptionlist
+
+          lua_pushstring(L,'symbols');
+          lua_gettable(l,disableInfoIndex);
+          if not lua_isnil(L,-1) then
+          begin
+            if lua_istable(L,-1)=false then raise exception.create('Corrupt disableInfo section at the symbols side');
+            lua_pushnil(L);
+            while lua_next(L, -2)<>0 do
+            begin
+              name:=Lua_ToString(L,-2);
+              address:=lua_tointeger(L,-1);
+              disableinfo.allsymbols.AddObject(name, tobject(address));
+              lua_pop(L,1);
+            end;
+          end;
+          lua_pop(L,1);
         end
         else raise exception.create('Not a valid disableInfo variable');
 
@@ -2804,11 +2819,8 @@ begin
       end;
     end;
 
-    if ccodesymbols=nil then
-      ccodesymbols:=TSymbolListHandler.create(targetself);
-
     try
-      r:=autoassemble(code, false, enable, false, targetself, CEAllocArray, exceptionlist, registeredsymbols, nil, ccodesymbols);
+      r:=autoassemble(code, false, enable, false, targetself, disableinfo);
     except
       on e:exception do
       begin
@@ -2818,8 +2830,7 @@ begin
       end;
     end;
 
-    if ccodesymbols.count=0 then
-      freeandnil(ccodesymbols);
+
 
     lua_pop(L, parameters);
     lua_pushboolean(L, r);
@@ -2835,16 +2846,16 @@ begin
       lua_newtable(L);
       tableIndex:=lua_gettop(L);
 
-      for i:=0 to length(CEAllocArray)-1 do
+      for i:=0 to length(disableinfo.Allocs)-1 do
       begin
-        lua_pushstring(L, CEAllocArray[i].varname);
+        lua_pushstring(L, disableinfo.Allocs[i].varname);
         lua_newtable(L);
         tableindex2:=lua_gettop(L);
 
-        lua_setbasictableentry(L, tableindex2, 'address',CEAllocArray[i].address);
-        lua_setbasictableentry(L, tableindex2, 'size',CEAllocArray[i].size);
-        if CEAllocArray[i].prefered<>0 then
-          lua_setbasictableentry(L, tableindex2, 'prefered',CEAllocArray[i].prefered);
+        lua_setbasictableentry(L, tableindex2, 'address',disableinfo.Allocs[i].address);
+        lua_setbasictableentry(L, tableindex2, 'size',disableinfo.Allocs[i].size);
+        if disableinfo.Allocs[i].prefered<>0 then
+          lua_setbasictableentry(L, tableindex2, 'prefered',disableinfo.Allocs[i].prefered);
 
         lua_settable(L, tableindex);
       end;
@@ -2854,20 +2865,21 @@ begin
       lua_newtable(L);
       tableIndex:=lua_gettop(L);
 
-      for i:=0 to registeredsymbols.Count-1 do
+      for i:=0 to disableinfo.registeredsymbols.Count-1 do
       begin
         lua_pushinteger(L,i+1);
-        lua_pushstring(L, registeredsymbols[i]);
+        lua_pushstring(L, disableinfo.registeredsymbols[i]);
         lua_settable(L, tableIndex);
       end;
 
       lua_settable(L, secondaryResultTable);
 
       //ccode symbollist
-      if ccodesymbols<>nil then
+      if (disableinfo.ccodesymbols.count>0) then
       begin
+        disableinfo.donotfreeccodesymbols:=true; //will return later
         lua_pushstring(L,'ccodesymbols');
-        luaclass_newClass(L,ccodesymbols);
+        luaclass_newClass(L,disableinfo.ccodesymbols);
         lua_settable(L, secondaryResultTable);
       end;
 
@@ -2875,22 +2887,34 @@ begin
       lua_newtable(L);
       tableIndex:=lua_gettop(L);
 
-      for i:=0 to length(exceptionlist)-1 do
+      for i:=0 to length(disableinfo.exceptions)-1 do
       begin
         lua_pushinteger(L,i+1);
-        lua_pushinteger(L, exceptionlist[i]);
+        lua_pushinteger(L, disableinfo.exceptions[i]);
         lua_settable(L, tableIndex);
+      end;
+      lua_settable(L, secondaryResultTable);
+
+      lua_pushstring(L,'symbols');
+      lua_newtable(L);
+      tableindex:=lua_gettop(L);
+      for i:=0 to disableinfo.allsymbols.count-1 do
+      begin
+        name:=disableinfo.allsymbols[i];
+        address:=ptruint(disableinfo.allsymbols.Objects[i]);
+        lua_pushstring(L,name);
+        lua_pushinteger(L,address);
+        lua_settable(L, tableindex);
       end;
 
       lua_settable(L, secondaryResultTable);
-
     end;
   finally
     if code<>nil then
       code.free;
 
-    if registeredsymbols<>nil then
-      registeredsymbols.free;
+    if disableinfo<>nil then
+      disableinfo.free;
   end;
 
 end;
@@ -3750,50 +3774,70 @@ var
   dialogtypeindex: integer;
 begin
   result:=0;
+  dialogtypeindex:=0;
   parameters:=lua_gettop(L);
-  if parameters>=3 then
+  if parameters>=1 then
   begin
-
     title:='';
-    if lua_type(L,2)=LUA_TSTRING then
+
+    if parameters>=2 then
     begin
-      dialogtypeindex:=3;
-      title:=Lua_ToString(L,1);
-      message:=lua_tostring(L,2);
+      if lua_type(L,2)=LUA_TSTRING then
+      begin
+        if parameters>=3 then
+          dialogtypeindex:=3;
+
+        title:=Lua_ToString(L,1);
+        message:=lua_tostring(L,2);
+      end
+      else
+      begin
+        message:=lua_tostring(L,1);
+        if parameters>=2 then
+          dialogtypeindex:=2;
+      end;
     end
     else
-    begin
       message:=lua_tostring(L,1);
-      dialogtypeindex:=2;
-    end;
 
-    dialogtype:=TMsgDlgType(lua_tointeger(L,dialogtypeindex));
+    if dialogtypeindex=0 then
+      dialogtype:=mtConfirmation
+    else
+      dialogtype:=TMsgDlgType(lua_tointeger(L,dialogtypeindex));
 
     b:=[];
-    for i:=dialogtypeindex+1 to parameters do
+
+    if dialogtypeindex>0 then
     begin
-      buttontype:=lua_tointeger(L,i);
-      case buttontype of
-        0:  b:=b+[mbYes];
-        1:  b:=b+[mbNo];
-        2:  b:=b+[mbOK];
-        3:  b:=b+[mbCancel];
-        4:  b:=b+[mbAbort];
-        5:  b:=b+[mbRetry];
-        6:  b:=b+[mbIgnore];
-        7:  b:=b+[mbAll];
-        8:  b:=b+[mbNoToAll];
-        9:  b:=b+[mbYesToAll];
-        10: b:=b+[mbHelp];
-        11: b:=b+[mbClose];
-        else b:=b+[mbyes];
+      for i:=dialogtypeindex+1 to parameters do
+      begin
+        buttontype:=lua_tointeger(L,i);
+        case buttontype of
+          0:  b:=b+[mbYes];
+          1:  b:=b+[mbNo];
+          2:  b:=b+[mbOK];
+          3:  b:=b+[mbCancel];
+          4:  b:=b+[mbAbort];
+          5:  b:=b+[mbRetry];
+          6:  b:=b+[mbIgnore];
+          7:  b:=b+[mbAll];
+          8:  b:=b+[mbNoToAll];
+          9:  b:=b+[mbYesToAll];
+          10: b:=b+[mbHelp];
+          11: b:=b+[mbClose];
+          else b:=b+[mbyes];
+        end;
       end;
     end;
+
+    if b=[] then
+      b:=[mbOk];
+
     lua_pop(L, parameters);
 
 
-    if dialogtypeindex=3 then
-      r:=messageDlg(title,string(message),dialogtype,b,0)
+    if title<>'' then
+      r:=messageDlg(title,message,dialogtype,b,0)
     else
       r:=messageDlg(message, dialogtype, b,0);
 
@@ -3893,6 +3937,7 @@ var
   ext: string='';
   self: boolean=false;
   script: tstringlist;
+  enable,disable: Tstringlist;
 begin
   address:='';
   addressTo:='';
@@ -3917,12 +3962,26 @@ begin
     lua_pop(L, lua_gettop(L));
 
     script:=tstringlist.create;
+    enable:=tstringlist.create;
+    disable:=tstringlist.create;
     try
+      script.add('[enable]');
+      script.add('');
+      script.add('[disable]');
+      script.add('');
+
       generateAPIHookScript(script, address, addressto, addresstogetnewcalladdress,ext,self);
-      lua_pushstring(L, pchar(script.text));
-      result:=1;
+
+      getEnableOrDisableScript(script, enable, true);
+      getEnableOrDisableScript(script, disable, false);
+
+      lua_pushstring(L, pchar(enable.text));
+      lua_pushstring(L, pchar(disable.text));
+      result:=2;
     finally
       script.free;
+      enable.free;
+      disable.free;
     end;
   end;
 
@@ -7937,7 +7996,7 @@ begin
     begin
       doc:=TXMLDocument.Create;
       try
-        SaveXML(doc, dontDeactivateDesignerForms);
+        SaveXML(doc, dontDeactivateDesignerForms, true);
         WriteXMLFile(doc, s);
         lua_pushboolean(L,true);
         result:=1;
@@ -9250,8 +9309,9 @@ var
   y,wr: dword;
 
   stubaddress, resultaddress: ptruint;
-  allocs: TCEAllocArray;
-  exceptionlist: TCEExceptionListArray;
+ // allocs: TCEAllocArray;
+ // exceptionlist: TCEExceptionListArray;
+  disableinfo: TDisableinfo;
 
   r: ptruint;
   dontfree: boolean;
@@ -9275,8 +9335,6 @@ begin
 
   paramcount:=lua_gettop(L)-3;
 
-  setlength(allocs,0);
-  setlength(exceptionlist,0);
 
   callmethod:=lua_tointeger(L,1);
   if callmethod>=2 then
@@ -9288,6 +9346,8 @@ begin
 
   address:=lua_toaddress(L,2);
   setlength(parameterlist,0);
+
+  disableinfo:=TDisableInfo.create;
 
   s:=tstringlist.create;
 
@@ -9569,7 +9629,8 @@ begin
       s.add('ret 4');
     end;
 
-    if autoassemble(s,false,true,false,false,allocs,exceptionlist) then
+
+    if autoassemble(s,false,true,false,false,disableinfo) then
     begin
       //return a table describing this stub so it can be executed
 
@@ -9579,12 +9640,12 @@ begin
       lua_createtable(L,0,1);
 
 
-      for i:=0 to length(allocs)-1 do
+      for i:=0 to length(disableinfo.allocs)-1 do
       begin
-        if  allocs[i].varname='stub' then
+        if  disableinfo.allocs[i].varname='stub' then
         begin
           lua_pushstring(L,'StubAddress');
-          lua_pushinteger(L,allocs[i].address);
+          lua_pushinteger(L,disableinfo.allocs[i].address);
           lua_settable(L,-3);
 
           lua_pushstring(L,'Parameters');
@@ -9612,6 +9673,9 @@ begin
       exit(0);
   finally
     s.free;
+
+    if disableinfo<>nil then
+      freeandnil(disableinfo);
   end;
 end;
 
@@ -9695,8 +9759,9 @@ var
   y,wr: dword;
 
   stubaddress, resultaddress: ptruint;
-  allocs: TCEAllocArray;
-  exceptionlist: TCEExceptionListArray;
+  //allocs: TCEAllocArray;
+  //exceptionlist: TCEExceptionListArray;
+  disableinfo: TDisableInfo;
 
   r: ptruint;
   dontfree: boolean;
@@ -9714,8 +9779,6 @@ begin
 
 
   setlength(stringallocs,0);
-  setlength(allocs,0);
-  setlength(exceptionlist,0);
 
   callmethod:=lua_tointeger(L,1);
   if callmethod>=2 then
@@ -9733,6 +9796,7 @@ begin
   address:=lua_toaddress(L,3);
 
 
+  disableinfo:=tdisableinfo.create;
   s:=tstringlist.create;
   floatvalues:=tstringlist.create;
 
@@ -10047,15 +10111,15 @@ begin
 
     dontfree:=false;
 
-    if autoassemble(s,false,true,false,false,allocs,exceptionlist) then
+    if autoassemble(s,false,true,false,false,disableinfo) then
     begin
-      for i:=0 to length(allocs)-1 do
+      for i:=0 to length(disableinfo.allocs)-1 do
       begin
-        if allocs[i].varname='stub' then
-          stubaddress:=allocs[i].address;
+        if disableinfo.allocs[i].varname='stub' then
+          stubaddress:=disableinfo.allocs[i].address;
 
-        if allocs[i].varname='result' then
-          resultaddress:=allocs[i].address;
+        if disableinfo.allocs[i].varname='result' then
+          resultaddress:=disableinfo.allocs[i].address;
       end;
 
       {
@@ -10124,6 +10188,8 @@ begin
     end;
   finally
     s.free;
+    floatvalues.free;
+    disableinfo.free;
 
     if (dontfree=false) then
     begin
@@ -10164,8 +10230,9 @@ end;
 function executeCode(L:PLua_state): integer; cdecl; //executecode(address, parameter)
 var
   s: tstringlist;
-  allocs: TCEAllocArray;
-  exceptionlist: TCEExceptionListArray;
+  //allocs: TCEAllocArray;
+  //exceptionlist: TCEExceptionListArray;
+  Disableinfo: TDisableinfo;
   address: ptruint;
   i: integer;
   stubaddress: ptruint;
@@ -10212,6 +10279,7 @@ begin
     exit;
 
   s:=tstringlist.create;
+  disableinfo:=TDisableinfo.create;
   try
     s.Add('allocXO(stub, 2048)');
 
@@ -10247,16 +10315,16 @@ begin
       s.add('dq '+inttohex(address,8));
     end;
 
-    if autoassemble(s, false, true, false, false, allocs, exceptionlist) then
+    if autoassemble(s, false, true, false, false, disableinfo) then
     begin
 
-      for i:=0 to length(allocs)-1 do
+      for i:=0 to length(disableinfo.allocs)-1 do
       begin
-        if allocs[i].varname='stub' then
-          stubaddress:=allocs[i].address;
+        if disableinfo.allocs[i].varname='stub' then
+          stubaddress:=disableinfo.allocs[i].address;
 
-        if allocs[i].varname='result' then
-          resultaddress:=allocs[i].address;
+        if disableinfo.allocs[i].varname='result' then
+          resultaddress:=disableinfo.allocs[i].address;
       end;
 
       if stubaddress<>0 then
@@ -10317,6 +10385,7 @@ begin
 
   finally
     s.free;
+    disableinfo.free;
 
     if (dontfree=false) and (stubaddress<>0) then
       VirtualFreeEx(processhandle, pointer(stubaddress), 0, MEM_RELEASE);
@@ -13306,6 +13375,8 @@ var
   references: tstringlist;
   script: string;
   fn: string;
+
+  coreAssembly: string;
 begin
   try
     if lua_gettop(L)<1 then raise exception.create('script parameter missing');
@@ -13330,7 +13401,13 @@ begin
         end;
       end;
 
-      fn:=compilecsharp(script, references);
+      if lua_gettop(L)>2 then
+        coreAssembly:=Lua_ToString(L,3)
+      else
+        coreAssembly:='';
+
+
+      fn:=compilecsharp(script, references, coreAssembly);
       lua_pushstring(L,fn);
       result:=1;
     finally
@@ -14182,6 +14259,9 @@ begin
       s.add('dbvm_raise_privilege=0x'+inttohex(ptruint(@vmxfunctions.dbvm_raise_privilege),8));
       s.add('dbvm_restore_interrupts=0x'+inttohex(ptruint(@vmxfunctions.dbvm_restore_interrupts),8));
       s.add('dbvm_changeselectors=0x'+inttohex(ptruint(@vmxfunctions.dbvm_changeselectors),8));
+
+      s.add('clWindow=0x'+inttohex(clWindow,8));
+      s.add('clWindowText=0x'+inttohex(clWindowtext,8));
       {$endif}
 
       //5.2 backward compatibility:

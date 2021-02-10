@@ -15,22 +15,26 @@ type
 
   TCSharpCompiler=class(TObject)
   private
-    dCompileCode: function(script: pchar; path: string; userdata: pointer; errorcallback: pointer): boolean; cdecl;
-    dAddReference: procedure(path: pchar); cdecl;
-    dRelease: procedure();  cdecl;
+    dCompileCode: function(script: pchar; path: string; userdata: pointer; errorcallback: pointer): boolean; stdcall;
+    dAddReference: procedure(path: pchar); stdcall;
+    dSetCoreAssembly: procedure(coreAssembly: pchar); stdcall;
+    dRelease: procedure();  stdcall;
   public
     procedure addAssemblyReference(path: string);
+    procedure setCoreAssembly(path: string);
     function compile(script: string; path: string; errorlog: tstrings): boolean;
 
     constructor create;
     destructor destroy; override;
   end;
 
-function compilecsharp(script: string; references: tstringlist): string;  //compile the script and return the name of the generated file.  Will raise exception on error
+function compilecsharp(script: string; references: tstringlist; coreAssembly: string=''): string;  //compile the script and return the name of the generated file.  Will raise exception on error
 
 implementation
 
+{$ifndef standalonetest}
 uses cefuncproc, globals;
+{$endif}
 
 var counter: integer;
 
@@ -139,7 +143,7 @@ begin
   pidlist.free;
 end;
 
-function compilecsharp(script: string; references: tstringlist): string;
+function compilecsharp(script: string; references: tstringlist; coreAssembly:string=''): string;
 var
   c: TCSharpCompiler;
   errorlog: Tstringlist;
@@ -159,7 +163,7 @@ begin
   usedtempdir:=IncludeTrailingPathDelimiter(usedtempdir)+'Cheat Engine'+pathdelim;
 
   inc(counter);
-  filename:='ce-cscode-'+inttostr(getcurrentprocessid)+'-'+inttostr(counter)+'.dll';
+  filename:=usedtempdir+'ce-cscode-'+inttostr(getcurrentprocessid)+'-'+inttostr(counter)+'.dll';
 
   c:=TCSharpCompiler.create;
   errorlog:=tstringlist.create;
@@ -167,10 +171,12 @@ begin
     for i:=0 to references.count-1 do
       c.addAssemblyReference(references[i]);
 
+    if coreAssembly<>'' then
+      c.setCoreAssembly(coreAssembly);
+
     if c.compile(script, filename, errorlog)=false then
       raise TCSharpCompilerError.create(errorlog.text);
 
-    //create a penis.dll.lock file
     result:=filename;
   finally
     errorlog.free;
@@ -190,6 +196,12 @@ begin
     dAddReference(pchar(path));
 end;
 
+procedure TCSharpCompiler.setCoreAssembly(path: string);
+begin
+  if assigned(dSetCoreAssembly) then
+    dSetCoreAssembly(pchar(path));
+end;
+
 function TCSharpCompiler.compile(script: string; path: string; errorlog: tstrings): boolean;
 begin
   result:=dCompileCode(pchar(script), pchar(path), errorlog, @OnErrorCallback);
@@ -200,15 +212,20 @@ var
   delegates: record
     CompileCode: pointer;
     AddReference: pointer;
+    SetCoreAssembly: pointer;
     Release: pointer;
   end;
   r: integer;
 begin
+
   r:=DotNetExecuteClassMethod({$ifdef standalonetest}'D:\git\cheat-engine\Cheat Engine\bin\CSCompiler.dll'{$else}CheatEngineDir+'CSCompiler.dll'{$endif},'CSCompiler','Compiler','NewCompiler',inttostr(ptruint(@delegates)));
+
+  //r:=DotNetExecuteClassMethod({$ifdef standalonetest}'D:\git\cheat-engine\Cheat Engine\bin\CSCompiler.dll'{$else}CheatEngineDir+'CSCompiler.dll'{$endif},'CSCompiler','Compiler','NewCompiler',inttostr(ptruint(@delegates)));
   if r<>1 then raise exception.create('C-Sharp compiler creation failed');
 
   pointer(dCompileCode):=delegates.CompileCode;
   pointer(dAddReference):=delegates.AddReference;
+  pointer(dSetCoreAssembly):=delegates.SetCoreAssembly;
   pointer(dRelease):=delegates.Release;
 end;
 

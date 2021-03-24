@@ -14,10 +14,16 @@ multiple sources. (e.g vmm and vmloader)
 
 //#include <string.h>
 
+#ifdef DEBUG
+void sendstringf_nolock(char *string UNUSED, ...);
+#endif
+
 QWORD textmemory=0x0b8000;
 
-criticalSection sendstringfCS;
-criticalSection sendstringCS;
+QWORD spinlocktimeout=0;
+
+criticalSection sendstringfCS={.name="sendstringfCS", .debuglevel=1};
+criticalSection sendstringCS={.name="sendstringCS", .debuglevel=1};
 
 #ifdef DELAYEDSERIAL
 int useserial=0;
@@ -76,6 +82,11 @@ unsigned char inportb(unsigned int port)
 
 void outportb(unsigned int port,unsigned char value)
 {
+  if (port==0x80)
+  {
+    nosendchar[getAPICID()]=0;
+    sendstringf_nolock("            -  Debug Code %2  -\n", value);
+  }
    asm volatile ("outb %%al,%%dx": :"d" (port), "a" (value));
 }
 
@@ -131,14 +142,16 @@ size_t strspn(const char *str, const char *chars)
 
 void exit(int status)
 {
-	sendstringf("Exited DBVM with status %d\n", status);
+  nosendchar[getAPICID()]=0;
+	sendstringf("Exit DBVM with status %d\n", status);
 	ddDrawRectangle(0,DDVerticalResolution-100,100,100,0xff0000);
 	while (1) outportb(0x80,0xc0);
 }
 
 void abort(void)
 {
-  sendstringf("Exited DBVM\n");
+  nosendchar[getAPICID()]=0;
+  sendstringf("Abort DBVM\n");
   ddDrawRectangle(0,DDVerticalResolution-100,100,100,0xff0000);
   while (1) outportb(0x80,0xc1);
 }
@@ -913,6 +926,33 @@ void sendstring(char *s UNUSED)
 #endif
 }
 
+#ifdef DEBUG
+void sendstringf_nolock(char *string UNUSED, ...)
+{
+#ifdef DELAYEDSERIAL
+  if (!useserial) return;
+#endif
+  nosendchar[getAPICID()]=0;
+
+  __builtin_va_list arglist;
+  char temps[200];
+  int sl,i;
+
+  __builtin_va_start(arglist,string);
+  sl=vbuildstring(temps,200,string,arglist);
+  __builtin_va_end(arglist);
+
+  #if DISPLAYDEBUG==1
+    displayline(temps); //instead of sending the output to the serial port, output to the display
+  #else
+    if (sl>0)
+    {
+      for (i=0; i<sl; i++)
+        sendchar(temps[i]);
+    }
+  #endif
+}
+#endif
 
 void sendstringf(char *string UNUSED, ...)
 {
@@ -1044,13 +1084,14 @@ void mrewEndWrite(Pmultireadexclusivewritesychronizer MREW)
 }
 
 
-
 void csEnter(PcriticalSection CS)
 {
 #ifdef DEBUG
   if (CS->ignorelock)
     return;
+
 #endif
+
 
   int apicid=getAPICID()+1; //+1 so it never returns 0
 
@@ -1061,7 +1102,57 @@ void csEnter(PcriticalSection CS)
     return;
   }
 
+
+
+
+
+
+#ifdef DEBUG
+  //sendstringf_nolock("%d",getcpuinfo()->cpunr);
+  if (spinlock(&(CS->locked)))
+  {
+    while (1)
+    {
+      nosendchar[getAPICID()]=0;
+      if ((emergencyOutputOnly==FALSE) || (CS->debuglevel>emergencyOutputLevel)) //similar to a BSOD
+      {
+        emergencyOutputOnly=TRUE;
+        emergencyOutputAPICID=getAPICID();
+        emergencyOutputLevel=CS->debuglevel;
+      }
+
+      sendstringf_nolock("%d: spinlock timeout. CS Name=",getcpuinfo()->cpunr); //todo: more info
+      if (CS->name)
+        sendstringf_nolock(CS->name);
+
+      sendstringf_nolock("\n");
+
+      sendstringf_nolock("CS->apicid=%d CS->lockcount=%d\n", CS->apicid, CS->lockcount);
+
+      pcpuinfo c=firstcpuinfo;
+      while (c)
+      {
+        if ((int)(c->apicid)==(int)(CS->apicid-1))
+        {
+          sendstringf_nolock("Locked by cpunr %d\n", c->cpunr);
+          sendstringf_nolock("LastVMCall=%x\n", c->LastVMCall);
+          sendstringf_nolock("insideHandler=%d\n", c->insideHandler);
+
+          break;
+        }
+        c=c->next;
+      }
+
+
+
+
+
+    }
+
+  }
+#else
   spinlock(&(CS->locked)); //sets CS->locked to 1
+#endif
 
   asm volatile ("": : :"memory");
 
@@ -1078,6 +1169,8 @@ void csLeave(PcriticalSection CS)
 #endif
 
   int apicid=getAPICID()+1; //+1 so it never returns 0
+  int locked=CS->locked;
+  int ownerAPICID=CS->apicid;
 
 
   if ((CS->locked) && (CS->apicid==apicid))
@@ -1095,9 +1188,21 @@ void csLeave(PcriticalSection CS)
   }
   else
   {
-    sendstringf("csLeave called for a non-locked or non-owned critical section\n");
+    nosendchar[getAPICID()]=0;
+    sendstringf_nolock("csLeave called for a non-locked or non-owned critical section.  Name=%s\n", CS->name);
     ddDrawRectangle(0,DDVerticalResolution-100,100,100,0xff0000);
-    while (1) outportb(0x80,0xc2);
+    while (1)
+    {
+      outportb(0x80,0xc2);
+      if (locked)
+      {
+        outportb(0x80,0xc3);
+      }
+      if (ownerAPICID!=apicid)
+      {
+        outportb(0x80,0xc4);
+      }
+    }
   }
 }
 
@@ -1455,6 +1560,13 @@ void sendchar(char c UNUSED)
 
   if (nosendchar[getAPICID()])
     return;
+
+  if (emergencyOutputOnly)
+  {
+    if (getAPICID()!=emergencyOutputAPICID)
+      return;
+  }
+
 
   if (c=='\r') //to deal with an obsolete linefeed not needed anymore
     return;

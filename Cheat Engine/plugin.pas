@@ -1877,7 +1877,7 @@ begin
 
   //pointers to the address that contains the pointers to the functions
   {$ifdef windows}
-  exportedfunctions.ReadProcessMemory:=@@ReadProcessMemory;
+  exportedfunctions.ReadProcessMemory:=@@ReadProcessMemoryActual;
   exportedfunctions.WriteProcessMemory:=@@WriteProcessMemoryActual;
   exportedfunctions.GetThreadContext:=@@GetThreadContext;
   exportedfunctions.SetThreadContext:=@@SetThreadContext;
@@ -1891,7 +1891,7 @@ begin
   exportedfunctions.StopRegisterChange:=nil; //@@StopRegisterChange;
   exportedfunctions.VirtualProtect:=@@VirtualProtect;
   exportedfunctions.VirtualProtectEx:=@@VirtualProtectEx;
-  exportedfunctions.VirtualQueryEx:=@@VirtualQueryEx;
+  exportedfunctions.VirtualQueryEx:=@@VirtualQueryExActual;
   exportedfunctions.VirtualAllocEx:=@@VirtualAllocEx;
   exportedfunctions.CreateRemoteThread:=@@CreateRemoteThread;
   exportedfunctions.OpenThread:=@@OpenThread;

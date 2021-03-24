@@ -186,10 +186,13 @@ begin
 
   if result then
   begin
-    processhandler.processid:=dwProcessID;
-    Open_Process;
-    symhandler.reinitialize;
-    symhandler.waitforsymbolsloaded(true);
+    if processhandler.processid<>dwProcessId then
+    begin
+      processhandler.processid:=dwProcessID;
+      Open_Process;
+      symhandler.reinitialize;
+      symhandler.waitforsymbolsloaded(true);
+    end;
 
     pid:=dwProcessID;
 
@@ -492,7 +495,7 @@ begin
   DBKDebug_SetGlobalDebugState(globalDebug);
   injectedEvents:=TQueue.Create;
 
-  fDebuggerCapabilities:=[dbcHardwareBreakpoint, dbcDBVMBreakpoint];
+  fDebuggerCapabilities:=fDebuggerCapabilities+[dbcHardwareBreakpoint, dbcDBVMBreakpoint];
   name:='Kernelmode Debugger';
 
   fmaxSharedBreakpointCount:=4;

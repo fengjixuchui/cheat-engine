@@ -169,6 +169,15 @@ var
   UseOriginalRenderingSystem: boolean;
   {$endif}
 
+  dbvmbp_options: record
+    TriggerCOW:boolean;
+    TargetedProcessOnly:boolean;
+    KernelmodeBreaks: boolean;
+  end;
+  DBVMWatchBPActive: boolean;
+
+  forceCR3VirtualQueryEx: boolean;
+
 
 
 implementation

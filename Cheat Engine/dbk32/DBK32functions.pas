@@ -246,14 +246,14 @@ var hdevice: thandle=INVALID_HANDLE_VALUE; //handle to my the device driver
     hUltimapDevice: thandle=INVALID_HANDLE_VALUE;
     handlemap: TMap;
     handlemapMREW: TMultiReadExclusiveWriteSynchronizer;
-    driverloc, ultimapdriverloc: string;
+    driverloc, ultimapdriverloc: widestring;
     iamprotected:boolean;
     SDTShadow: DWORD;
     debugport: dword;
 
     ThreadsProcess,ThreadListEntry:dword;
 
-    processeventname, threadeventname: string;
+    processeventname, threadeventname: widestring;
     processevent,threadevent:thandle;
 
     ownprocess: thandle=0; //needed for simple kernelmemory access
@@ -275,6 +275,7 @@ var hdevice: thandle=INVALID_HANDLE_VALUE; //handle to my the device driver
 
 function CTL_CODE(DeviceType, Func, Method, Access : integer) : integer;
 function IsValidHandle(hProcess:THandle):BOOL; stdcall;
+function IsDBKHandle(hProcess:THandle):BOOL; stdcall;
 Function {OpenProcess}OP(dwDesiredAccess:DWORD;bInheritHandle:BOOL;dwProcessId:DWORD):THANDLE; stdcall;
 Function {OpenThread}OT(dwDesiredAccess:DWORD;bInheritHandle:BOOL;dwThreadId:DWORD):THANDLE; stdcall;
 function {ReadProcessMemory}RPM(hProcess:THANDLE;lpBaseAddress:pointer;lpBuffer:pointer;nSize:DWORD;var NumberOfBytesRead:PtrUInt):BOOL; stdcall;
@@ -303,7 +304,7 @@ function GetThreadListEntryOffset: dword; stdcall;
 
 function ReadPhysicalMemory(hProcess:THANDLE;lpBaseAddress:pointer;lpBuffer:pointer;nSize:DWORD;var NumberOfBytesRead:PTRUINT):BOOL; stdcall;
 function WritePhysicalMemory(hProcess:THANDLE;lpBaseAddress:pointer;lpBuffer:pointer;nSize:DWORD;var NumberOfBytesWritten:PTRUINT):BOOL; stdcall;
-function GetPhysicalAddress(hProcess:THandle;lpBaseAddress:pointer;var Address:int64): BOOL; stdcall;
+function GetPhysicalAddress(hProcess:THandle;lpBaseAddress:pointer;var Address:qword): BOOL; stdcall;
 function GetMemoryRanges(var ranges: TPhysicalMemoryRanges): boolean;
 function VirtualQueryExPhysical(hProcess: THandle; lpAddress: Pointer; var lpBuffer: TMemoryBasicInformation; dwLength: DWORD): DWORD; stdcall;
 
@@ -454,8 +455,8 @@ resourcestring
   rsPleaseRunThe64BitVersionOfCE = 'Please run the 64-bit version of Cheat Engine';
   rsDBKError = 'DBK Error';
 
-var dataloc: string;
-    applicationPath: string;
+var dataloc: widestring;
+    applicationPath: widestring;
 
 type TVirtualAllocEx=function(hProcess: THandle; lpAddress: Pointer; dwSize, flAllocationType: DWORD; flProtect: DWORD): Pointer; stdcall;
 var VirtualAllocEx: TVirtualAllocEx;
@@ -830,7 +831,10 @@ begin
     cc:=IOCTL_CE_GETCR4;
     if deviceiocontrol(hdevice,cc,nil,0,@res,sizeof(res),x,nil) then
       result:=res;
-  end;
+  end
+  else
+  if isRunningDBVM then
+    result:=dbvm_getRealCR4;
 end;
 
 
@@ -905,7 +909,7 @@ begin
         x:=l.processid;
         result:=deviceiocontrol(hdevice,cc,@x,4,@_cr3,8,y,nil);
 
-        outputdebugstring(pchar('GetCR3: return '+inttohex(_cr3,16)));
+       // outputdebugstring(pchar('GetCR3: return '+inttohex(_cr3,16)));
         if result then CR3:=_cr3 else cr3:=$11223344;
       end;
 
@@ -945,7 +949,7 @@ begin
     x:=pid;
     result:=deviceiocontrol(hdevice,cc,@x,4,@_cr3,8,y,nil);
 
-    outputdebugstring(pchar('GetCR3: return '+inttohex(_cr3,16)));
+    //outputdebugstring(pchar('GetCR3: return '+inttohex(_cr3,16)));
 
     if (_cr3 and $fff)>0 then
     begin
@@ -1090,7 +1094,7 @@ end;
 
 
 
-function GetPhysicalAddress(hProcess:THandle;lpBaseAddress:pointer;var Address:int64): BOOL; stdcall;
+function GetPhysicalAddress(hProcess:THandle;lpBaseAddress:pointer;var Address:qword): BOOL; stdcall;
 type TInputstruct=record
   ProcessID: UINT64;
   BaseAddress: UINT64;
@@ -1335,6 +1339,13 @@ var ao: array [0..511] of byte;
     bufpointer2: pointer;
     towrite: dword;
 begin
+  if vmx_loaded and (dbvm_version>=$ce00000a) then
+  begin
+    NumberOfBytesWritten:=dbvm_write_physical_memory(qword(lpBaseAddress), lpBuffer, nSize);
+    exit(NumberOfBytesWritten=nSize);
+  end;
+
+
   result:=false;
   NumberOfByteswritten:=0;
   //find the hprocess in the handlelist, if it isn't use the normal method (I could of course use NtQueryProcessInformation but it's undocumented and I'm too lazy to dig it up
@@ -1400,7 +1411,7 @@ begin
     exit(numberofbytesread=nSize);
   end;
 
-  OutputDebugString('Using normal dbk method');
+  //OutputDebugString('Using normal dbk method');
 
   result:=false;
   numberofbytesread:=0;
@@ -1469,6 +1480,17 @@ begin
   end;
 end;
 
+function IsDBKHandle(hProcess:THandle):BOOL; stdcall;
+var l: THandleListEntry;
+begin
+  result:=false;
+  handlemapmrew.Beginread;
+  try
+    result:=handlemap.HasId(hProcess);
+  finally
+    handlemapmrew.Endread;
+  end;
+end;
 
 function IsValidHandle(hProcess:THandle):BOOL; stdcall;
 var l: THandleListEntry;
@@ -3105,14 +3127,14 @@ var hscManager: thandle;
     hservice, hUltimapService: thandle;
 
 var sav: pchar;
-    apppath: pchar;
+    apppath: pwidechar;
 
 
 
  //   win32kaddress: ptrUint;
  //   win32size:dword;
-    servicename,sysfile: string;
-    ultimapservicename, ultimapsysfile: string;
+    servicename,sysfile: widestring;
+    ultimapservicename, ultimapsysfile: widestring;
     vmx_p1_txt,vmx_p2_txt: string;
 
 
@@ -3141,8 +3163,8 @@ begin
       apppath:=nil;
       hSCManager := OpenSCManager(nil, nil, GENERIC_READ or GENERIC_WRITE);
       try
-        getmem(apppath,250);
-        GetModuleFileName(0,apppath,250);
+        getmem(apppath,510);
+        GetModuleFileNameW(0, apppath, 250);
 
         applicationpath:=extractfilepath(apppath);
 
@@ -3220,18 +3242,18 @@ begin
 
         if fileexists(ultimapdriverloc) then
         begin
-          hUltimapService := OpenService(hSCManager, pchar(ultimapservicename), SERVICE_ALL_ACCESS);
+          hUltimapService := OpenServiceW(hSCManager, pwidechar(ultimapservicename), SERVICE_ALL_ACCESS);
           if hUltimapService=0 then
           begin
-            hUltimapService:=CreateService(
+            hUltimapService:=CreateServiceW(
                hSCManager,           // SCManager database
-               pchar(ultimapservicename),   // name of service
-               pchar(ultimapservicename),   // name to display
+               pwidechar(ultimapservicename),   // name of service
+               pwidechar(ultimapservicename),   // name to display
                SERVICE_ALL_ACCESS,   // desired access
                SERVICE_KERNEL_DRIVER,// service type
                SERVICE_DEMAND_START, // start type
                SERVICE_ERROR_NORMAL, // error control type
-               pchar(ultimapdriverloc),     // service's binary
+               pwidechar(ultimapdriverloc),     // service's binary
                nil,                  // no load ordering group
                nil,                  // no tag identifier
                nil,                  // no dependencies
@@ -3242,17 +3264,17 @@ begin
           else
           begin
             //make sure the service points to the right file
-            ChangeServiceConfig(hultimapservice,
+            ChangeServiceConfigW(hultimapservice,
                                 SERVICE_KERNEL_DRIVER,
                                 SERVICE_DEMAND_START,
                                 SERVICE_ERROR_NORMAL,
-                                pchar(ultimapdriverloc),
+                                pwidechar(ultimapdriverloc),
                                 nil,
                                 nil,
                                 nil,
                                 nil,
                                 nil,
-                                pchar(ultimapservicename));
+                                pwidechar(ultimapservicename));
           end;
 
         end;
@@ -3281,7 +3303,7 @@ begin
             hUltimapService:=0;
           end;
 
-          hultimapDevice := CreateFile(pchar('\\.\'+ultimapservicename),
+          hultimapDevice := CreateFileW(pwidechar('\\.\'+ultimapservicename),
                         GENERIC_READ or GENERIC_WRITE,
                         FILE_SHARE_READ or FILE_SHARE_WRITE,
                         nil,
@@ -3303,18 +3325,18 @@ begin
 
         //load DBK
 
-        hService := OpenService(hSCManager, pchar(servicename), SERVICE_ALL_ACCESS);
+        hService := OpenServiceW(hSCManager, pwidechar(servicename), SERVICE_ALL_ACCESS);
         if hService=0 then
         begin
-          hService:=CreateService(
+          hService:=CreateServiceW(
              hSCManager,           // SCManager database
-             pchar(servicename),   // name of service
-             pchar(servicename),   // name to display
+             pwidechar(servicename),   // name of service
+             pwidechar(servicename),   // name to display
              SERVICE_ALL_ACCESS,   // desired access
              SERVICE_KERNEL_DRIVER,// service type
              SERVICE_DEMAND_START, // start type
              SERVICE_ERROR_NORMAL, // error control type
-             pchar(driverloc),     // service's binary
+             pwidechar(driverloc),     // service's binary
              nil,                  // no load ordering group
              nil,                  // no tag identifier
              nil,                  // no dependencies
@@ -3325,17 +3347,17 @@ begin
         else
         begin
           //make sure the service points to the right file
-          ChangeServiceConfig(hservice,
+          ChangeServiceConfigW(hservice,
                               SERVICE_KERNEL_DRIVER,
                               SERVICE_DEMAND_START,
                               SERVICE_ERROR_NORMAL,
-                              pchar(driverloc),
+                              pwidechar(driverloc),
                               nil,
                               nil,
                               nil,
                               nil,
                               nil,
-                              pchar(servicename));
+                              pwidechar(servicename));
 
 
         end;
@@ -3379,7 +3401,7 @@ begin
         end;
 
         hdevice:=INVALID_HANDLE_VALUE;
-        hDevice := CreateFile(pchar('\\.\'+servicename),
+        hDevice := CreateFileW(pwidechar('\\.\'+servicename),
                       GENERIC_READ or GENERIC_WRITE,
                       FILE_SHARE_READ or FILE_SHARE_WRITE,
                       nil,

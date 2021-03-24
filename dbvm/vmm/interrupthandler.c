@@ -15,7 +15,7 @@
 PINT_VECTOR intvector=NULL;
 
 #ifdef DEBUGINTHANDLER
-criticalSection cinthandlerMenuCS;
+criticalSection cinthandlerMenuCS={.name="cinthandlerMenuCS", .debuglevel=2};
 #endif
 
 int IntHandlerDebug=0;
@@ -324,8 +324,16 @@ int cinthandler(unsigned long long *stack, int intnr) //todo: move to it's own s
   DWORD thisAPICID;
   int cpunr=0;
 
+  thisAPICID=getAPICID();
+  nosendchar[getAPICID()]=0;
+
   enableserial();
 
+  emergencyOutputOnly=0;
+
+  sendstring("\n------------------------------------------\n");
+  sendstringf("|             EXCEPTION %d               |\n", intnr);
+  sendstring("------------------------------------------\n");
 
   ddDrawRectangle(DDHorizontalResolution-100,0,100,100,_rdtsc());
 
@@ -376,7 +384,7 @@ int cinthandler(unsigned long long *stack, int intnr) //todo: move to it's own s
     setDR7(0ULL);
   }
 
-  thisAPICID=getAPICID();
+
 
 #ifdef CHECKAPICID
   if (thisAPICID!=cpuinfo->apicid)
@@ -400,7 +408,7 @@ int cinthandler(unsigned long long *stack, int intnr) //todo: move to it's own s
 
   sendstringf("cpunr=%d (apicid=%d)\n\r",cpunr, thisAPICID);
   sendstringf("intnr=%d\n\r",intnr);
-  sendstringf("rsp=%x\n\r",getRSP());
+  sendstringf("rsp=%6\n\r",getRSP());
   sendstringf("cr2=%6\n\r",getCR2());
   errorcode=0;
 
@@ -482,6 +490,7 @@ int cinthandler(unsigned long long *stack, int intnr) //todo: move to it's own s
 
   sendstringf("Checking if it was an expected interrupt\n\r");
   cpuinfo->LastExceptionRIP=stack[16+errorcode];
+  cpuinfo->LastInterrupt=(unsigned char)intnr;
 
   if (cpuinfo->OnException[0].RIP)
   {
@@ -634,6 +643,8 @@ int cinthandler(unsigned long long *stack, int intnr) //todo: move to it's own s
     sendstring("1: Exit from interrupt\n\r");
     sendstring("2: Check CRC values\n\r");
     sendstring("3: Get vmstate\n\r");
+    sendstring("4: Main menu\n\r");
+
     sendstring("p: Previous vmstates\n\r");
 
 
@@ -656,6 +667,10 @@ int cinthandler(unsigned long long *stack, int intnr) //todo: move to it's own s
 
       case '3':
         sendvmstate(cpuinfo, NULL);
+        break;
+
+      case '4':
+        menu();
         break;
 
       case 'p':

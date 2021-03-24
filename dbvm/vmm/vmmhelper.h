@@ -612,10 +612,15 @@ typedef volatile struct tcpuinfo
   struct //single stepping data
   {
     int Method;
+    int PreviousTFState;
+    QWORD PreviousEFER; //AMD single step
+    QWORD PreviousFMASK;
+    int LastInstructionWasSyscall;//AMD single step
 
     SingleStepReason *Reasons;
     int ReasonsPos;
     int ReasonsLength;
+
   } singleStepping;
 
   int BPAfterStep;
@@ -631,6 +636,7 @@ typedef volatile struct tcpuinfo
   } SwitchKernel;
 
   int LastVMCall;
+  int insideHandler;
 
 } tcpuinfo, *pcpuinfo; //allocated when the number of cpu's is known
 

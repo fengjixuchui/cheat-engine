@@ -1,7 +1,7 @@
 object frmLuaEngine: TfrmLuaEngine
-  Left = 436
+  Left = 658
   Height = 338
-  Top = 344
+  Top = 282
   Width = 570
   HelpContext = 19
   Caption = 'Lua Engine'
@@ -12,7 +12,7 @@ object frmLuaEngine: TfrmLuaEngine
   OnDestroy = FormDestroy
   OnShow = FormShow
   Position = poScreenCenter
-  LCLVersion = '2.0.6.0'
+  LCLVersion = '2.0.10.0'
   object GroupBox1: TGroupBox
     Left = 0
     Height = 182

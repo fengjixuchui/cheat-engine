@@ -658,14 +658,13 @@ int twister=0;
 #if DISPLAYDEBUG==1
 int verbosity=10;
 #else
-int verbosity=1;
+int verbosity=0;
 #endif
 int rotations=0;
 int cpu2=0; //debug to stop cpu1 when cpu2 is spawned
 
 int vmeventcount=0;
-criticalSection vmexitlock;
-
+criticalSection vmexitlock={.name="vmexitlock", .debuglevel=0};
 
 
 int vmexit_amd(pcpuinfo currentcpuinfo, UINT64 *registers, void *fxsave UNUSED)
@@ -673,6 +672,7 @@ int vmexit_amd(pcpuinfo currentcpuinfo, UINT64 *registers, void *fxsave UNUSED)
  // displayline("vmexit_amd called. currentcpuinfo=%p\n", currentcpuinfo);
  // displayline("cpunr=%d\n", currentcpuinfo->cpunr);
   int result=0;
+  currentcpuinfo->insideHandler=1;
 
   nosendchar[getAPICID()]=1;
 
@@ -686,8 +686,18 @@ int vmexit_amd(pcpuinfo currentcpuinfo, UINT64 *registers, void *fxsave UNUSED)
   vmeventcount++;
 
 
+
 #ifdef DEBUG
   csEnter(&vmexitlock);
+
+  if ((int)(vmexitlock.apicid-1)!=(int)(currentcpuinfo->apicid))
+  {
+    nosendchar[getAPICID()]=0;
+    while (1)
+    {
+      sendstringf("lockcount inconsistency 3.  %d != %d  (%d)\n",vmexitlock.apicid,currentcpuinfo->apicid, getAPICID() );
+    }
+  }
 
 
   //sendstringf("vmexit_amd for cpu %d\n", currentcpuinfo->cpunr);
@@ -698,20 +708,47 @@ int vmexit_amd(pcpuinfo currentcpuinfo, UINT64 *registers, void *fxsave UNUSED)
   {
     BOOL r=dbvm_plugin_exit_pre(exportlist, currentcpuinfo, registers, fxsave);
     if (r)
+    {
+      sendstring("dbvm_plugin_exit_pre returned TRUE");
+#ifdef DEBUG
+      csLeave(&vmexitlock);
+#endif
+      currentcpuinfo->insideHandler=0;
       return 0;
+    }
   }
 
   result=handleVMEvent_amd(currentcpuinfo, (VMRegisters*)registers, fxsave);
 
-
-
   if (dbvm_plugin_exit_post)
     dbvm_plugin_exit_post(exportlist, currentcpuinfo, registers, fxsave, &result);
 
+
+
 #ifdef DEBUG
+  if (vmexitlock.lockcount>1)
+  {
+    nosendchar[getAPICID()]=0;
+    while (1)
+    {
+      sendstringf("lockcount inconsistency");
+    }
+
+  }
   csLeave(&vmexitlock);
 #endif
 
+  currentcpuinfo->insideHandler=0;
+
+  if ((vmexitlock.lockcount>0) && ((int)(vmexitlock.apicid-1)==(int)(currentcpuinfo->apicid)))
+  {
+    nosendchar[getAPICID()]=0;
+    while (1)
+    {
+      sendstringf("lockcount inconsistency 2");
+    }
+
+  }
 
   return result;
 }
@@ -1280,6 +1317,9 @@ int vmexit(pcpuinfo currentcpuinfo, UINT64 *registers, void *fxsave)
         	  break;
 
         }
+
+        skip=1; //skip all rdmsr
+
         break;
 
       }
@@ -1296,6 +1336,8 @@ int vmexit(pcpuinfo currentcpuinfo, UINT64 *registers, void *fxsave)
           break;
 
         }
+
+        skip=1;
 
         break;
       }
@@ -1314,6 +1356,9 @@ int vmexit(pcpuinfo currentcpuinfo, UINT64 *registers, void *fxsave)
       {
         //int cs=vmread(vm_guest_cs);
         //unsigned long long rip=vmread(vm_guest_rip);
+        nosendchar[getAPICID()]=0;
+        sendstringf("invalid guest\n");
+
         skip=verbosity; //never
 
 
@@ -1345,11 +1390,6 @@ int vmexit(pcpuinfo currentcpuinfo, UINT64 *registers, void *fxsave)
         return raiseNMI();
       }
 
-      if (currentcpuinfo->cpunr)
-      {
-        sendstring("cpunr!=0");
-      }
-
       if ((result==0) || ((result >> 8)==0xce))
       {
         if (debugmode)
@@ -1377,15 +1417,9 @@ int vmexit(pcpuinfo currentcpuinfo, UINT64 *registers, void *fxsave)
       }
       */
 
-  if (currentcpuinfo->cpunr)
-  {
-    sendstring("cpunr!=0");
-  }
-
   enableserial();
   sendstringf("\n\r------------(%d)------------------\n\r",vmeventcount);
   sendstringf("Hello from vmexit-(cpunr=%d)",currentcpuinfo->cpunr);
-
 
 
   sendstringf("currentcpuinfo = %6  : APICID=%d  :  RSP=%6\n\r",(UINT64)currentcpuinfo, getAPICID(), getRSP());
@@ -1411,6 +1445,13 @@ int vmexit(pcpuinfo currentcpuinfo, UINT64 *registers, void *fxsave)
   sendstringf("Pending debug exceptions = %x\n\r",vmread(vm_pending_debug_exceptions));
   sendstringf("Guest linear   address=%6\n\r",vmread(vm_guest_linear_address));
   sendstringf("Guest physical address=%6\n\r",vmread(vm_guest_physical_address));
+
+  RFLAGS rflags;
+  rflags.value=vmread(vm_guest_rflags);
+
+  sendstringf("rflags=%x (IF=%d TF=%d RF=%d)\n",rflags.value, rflags.IF, rflags.TF, rflags.RF);
+
+
 
   sendstringf("csbase=%6\n",vmread(vm_guest_cs_base));
   sendstringf("rip=%6\n",vmread(vm_guest_rip));

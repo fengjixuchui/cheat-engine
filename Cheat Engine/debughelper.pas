@@ -58,7 +58,9 @@ type
     hasSetDEPPolicy: boolean;
 
     neverstarted: boolean;
+    pid: THandle;
 
+    procedure DBVMSteppingLost(sender: TObject);
     function getDebugThreadHanderFromThreadID(tid: dword): TDebugThreadHandler;
 
     procedure GetBreakpointList(address: uint_ptr; size: integer; var bplist: TBreakpointSplitArray);
@@ -176,7 +178,7 @@ implementation
 uses CEDebugger, KernelDebugger, formsettingsunit, FormDebugStringsUnit,
      frmBreakpointlistunit, plugin, memorybrowserformunit, autoassembler,
      pluginexports, networkInterfaceApi, ProcessHandlerUnit, Globals, LuaCaller,
-     vmxfunctions, LuaHandler, frmDebuggerAttachTimeoutUnit;
+     vmxfunctions, LuaHandler, frmDebuggerAttachTimeoutUnit, DBVMDebuggerInterface;
 
 //-----------Inside thread code---------
 
@@ -317,7 +319,7 @@ begin
       end else
       begin
         fNeedsToSetEntryPointBreakpoint:=false; //just be sure
-        if not DebugActiveProcess(processid) then
+        if not DebugActiveProcess(pid) then
         begin
           OutputDebugString('DebugActiveProcess failed');
           exit;
@@ -333,6 +335,9 @@ begin
       begin
 
         execlocation:=1;
+
+        if CurrentDebuggerInterface.needsToAttach=false then
+          OnAttachEvent.SetEvent; //no need to wait if the debufferinterface does not need to wait
 
 
         if WaitForDebugEvent(debugEvent, 100) then
@@ -489,7 +494,7 @@ begin
   end;
 
   if idle and updated and (frmBreakpointlist<>nil) then
-    postmessage(frmBreakpointlist.handle, WM_BPUPDATE,0,0); //tell the breakpointlist that there's been an update
+    queue(tthread.CurrentThread, frmBreakpointlist.updatebplist); //tell the breakpointlist that there's been an update
 end;
 
 
@@ -717,9 +722,10 @@ var
   tid, bptype: integer;
   vpe: boolean;
 
-  PA: int64;
+  PA: qword;
 
   newdr7: qword;
+  old: byte;
 
 procedure displayDebugInfo(reason: string);
 var debuginfo:tstringlist;
@@ -752,6 +758,9 @@ end;
 
 begin
   //issue: If a breakpoint is being handled and this is called, dr6 gets reset to 0 in windows 7, making it impossible to figure out what caused the breakpoint
+
+  if CurrentDebuggerInterface is TDBVMDebugInterface then
+    breakpoint^.breakpointMethod:=bpmDBVMNative;
 
   AllThreadsAreSet:=true;
 
@@ -1019,8 +1028,45 @@ begin
       {$endif}
     end;
 
-    //bpmDBVM2: //todo: in case of execute then instead of a no-execute page, make it a cloaked page with an int3 bp
+    bpmDBVMNAtive:
+    begin
+      Log('Setting DBVM Native Breakpoint');
+      if not (CurrentDebuggerInterface is TDBVMDebugInterface) then raise exception.create('Only the DBVM debugger can set DBVMNative breakpoints');
 
+      {$ifdef windows}
+      loaddbvmifneeded;
+
+      if dbvmbp_options.TriggerCOW and (breakpoint^.breakpointTrigger=bptExecute) then
+      begin
+        //trigger COW before placing the bp
+        if ReadProcessMemory(processhandle, pointer(breakpoint^.address), @old,1,bw) then
+        begin
+          vpe:=(SkipVirtualProtectEx=false) and VirtualProtectEx(processhandle, pointer(breakpoint.address), 1, PAGE_EXECUTE_READWRITE, oldprotect);
+          WriteProcessMemoryActual(processhandle, pointer(breakpoint.address), @old, 1, bw); //skip the DBVM version and use the native kernelmode/winapi one
+          if vpe then
+            VirtualProtectEx(processhandle, pointer(breakpoint.address), 1, oldprotect, oldprotect);
+        end;
+      end;
+
+      if GetPhysicalAddress(processhandle,pointer(breakpoint^.address),pa) then
+      begin
+        DBVMWatchBPActive:=true;
+
+        case breakpoint^.breakpointTrigger of
+          bptExecute:breakpoint^.dbvmwatchid:=dbvm_watch_executes(PA,breakpoint^.size,EPTO_DBVMBP,0, TDBVMDebugInterface(currentdebuggerinterface).usermodeloopint3, TDBVMDebugInterface(currentdebuggerinterface).kernelmodeloopint3);
+          bptAccess: breakpoint^.dbvmwatchid:=dbvm_watch_reads(PA,breakpoint^.size,EPTO_DBVMBP,0, TDBVMDebugInterface(currentdebuggerinterface).usermodeloopint3, TDBVMDebugInterface(currentdebuggerinterface).kernelmodeloopint3);
+          bptWrite: breakpoint^.dbvmwatchid:=dbvm_watch_writes(PA,breakpoint^.size,EPTO_DBVMBP,0, TDBVMDebugInterface(currentdebuggerinterface).usermodeloopint3, TDBVMDebugInterface(currentdebuggerinterface).kernelmodeloopint3);
+        end;
+
+        if breakpoint^.dbvmwatchid=-1 then
+          raise exception.create('Failure setting a memory watch')
+        else
+          breakpoint^.active:=true;
+      end
+      else
+        raise exception.create(format('Failure obtaining physical address for %8x',[breakpoint^.address]));
+      {$endif}
+    end;
   end;
 
   result:=AllThreadsAreSet;
@@ -1249,16 +1295,18 @@ begin
 
   end
   else
-  if breakpoint^.breakpointMethod=bpmDBVM then
+  if (breakpoint^.breakpointMethod=bpmDBVM) or (breakpoint^.breakpointMethod=bpmDBVMNative) then
     dbvm_watch_delete(breakpoint^.dbvmwatchid);
 
   breakpoint^.active := false;
+
 end;
 
 procedure TDebuggerThread.RemoveBreakpoint(breakpoint: PBreakpoint);
 var
   i,j: integer;
   bp: PBreakpoint;
+  state: boolean;
 begin
   debuggercs.enter;
   try
@@ -1295,6 +1343,19 @@ begin
     breakpoint^.deletetickcount:=GetTickCount;
 
 
+    state:=false;
+    for j:=0 to breakpointlist.Count-1 do
+    begin
+      BP := breakpointlist.items[j];
+      if bp^.active and (bp^.breakpointMethod=bpmDBVMNative) then
+      begin
+        state:=true;
+        break;
+      end;
+    end;
+
+    DBVMWatchBPActive:=state;
+
 
 
     OutputDebugString('Disabled the breakpoint');
@@ -1303,7 +1364,7 @@ begin
   end;
 
   if frmBreakpointlist<>nil then
-    postmessage(frmBreakpointlist.handle, WM_BPUPDATE,0,0); //tell the breakpointlist that there's been an update
+    queue(tthread.CurrentThread, frmBreakpointlist.updatebplist);
 end;
 
 function TDebuggerThread.AddBreakpoint(owner: PBreakpoint; address: uint_ptr; size: integer; bpt: TBreakpointTrigger; bpm: TBreakpointMethod; bpa: TBreakpointAction; debugregister: integer=-1; foundcodedialog: Tfoundcodedialog=nil; threadID: dword=0; frmchangedaddresses: Tfrmchangedaddresses=nil; FrmTracer: TFrmTracer=nil; tcount: integer=0; changereg: pregistermodificationBP=nil; OnBreakpoint: TBreakpointEvent=nil): PBreakpoint;
@@ -1314,6 +1375,8 @@ var
   i: integer;
   count: integer;
 begin
+  if CurrentDebuggerInterface is TDBVMDebugInterface then
+    bpm:=bpmDBVMNative;
 
 
   if bpm=bpmInt3 then
@@ -1384,7 +1447,7 @@ begin
   Result := newbp;
 
   if frmBreakpointlist<>nil then
-    postmessage(frmBreakpointlist.handle, WM_BPUPDATE,0,0); //tell the breakpointlist that there's been an update
+    queue(tthread.CurrentThread, frmBreakpointlist.updatebplist);
 end;
 
 procedure TDebuggerThread.GetBreakpointList(address: uint_ptr; size: integer; var bplist: TBreakpointSplitArray);
@@ -1608,6 +1671,11 @@ var
 begin
   if size=0 then exit;
 
+  if CurrentDebuggerInterface is TDBVMDebugInterface then
+    breakpointmethod:=bpmDBVMNative;  //memory watch bp's all the way
+
+
+
   if breakpointmethod=bpmint3 then //not possible for this
     breakpointmethod:=bpmDebugRegister;
 
@@ -1810,7 +1878,11 @@ begin
     RemoveBreakpoint(bp);
 
 
-  method:=preferedBreakpointMethod;
+  if CurrentDebuggerInterface is TDBVMDebugInterface then
+    method:=bpmDBVMNative
+  else
+    method:=preferedBreakpointMethod;
+
   usedDebugRegister:=-1;
   if method=bpmDebugRegister then
   begin
@@ -1937,6 +2009,9 @@ begin
   else
     method:=preferedBreakpointMethod;
 
+  if CurrentDebuggerInterface is TDBVMDebugInterface then
+    method:=bpmDBVMNative;
+
   usedDebugRegister:=-1;
   if method=bpmDebugRegister then
   begin
@@ -2050,9 +2125,6 @@ end;
 
 
 procedure TDebuggerthread.updatebplist(lv: TListview; showshadow: boolean);
-{
-Only called by the breakpointlist form running in the main thread. It's called after the WM_BPUPDATE is sent to the breakpointlist window
-}
 var
   i: integer;
   li: TListitem;
@@ -2191,6 +2263,9 @@ var
   ph: THandle;
 
 begin
+  if CurrentDebuggerInterface is TDBVMDebugInterface then
+    bpm:=bpmDBVMNative;
+
   found := False;
 
   result:=nil;
@@ -2428,6 +2503,9 @@ var
   usableDebugReg: integer;
   method: TBreakpointMethod;
 begin
+  if CurrentDebuggerInterface is TDBVMDebugInterface then
+    breakpointmethod:=bpmDBVMNative;
+
   //find the breakpoint if it is already assigned and then remove it, else add the breakpoint
   found := False;
 
@@ -2616,10 +2694,17 @@ var
 begin
 
 
+
   //if IsDebuggerPresent then //when debugging the debugger 10 seconds is too short
   //  timeout:=5000000
   //else
+  {$ifdef DEBUGDEBUGGER}
+    timeout:=$FFFFFFFF;
+  {$else}
     timeout:=5000;
+  {$endif}
+
+
 
   OutputDebugString('WaitTillAttachedOrError');
   result:=wrTimeout;
@@ -2627,9 +2712,9 @@ begin
   userWantsToAttach:=true;
   while userWantsToAttach do
   begin
-    starttime:=GetTickCount;
+    starttime:=GetTickCount64;
 
-    while (gettickcount-starttime)<timeout do
+    while (gettickcount64-starttime)<=timeout do
     begin
 
       currentloopstarttime:=GetTickCount;
@@ -2720,6 +2805,11 @@ begin
   formSettings.setNoteAboutDebuggerInterfaces;
 end;
 
+procedure TDebuggerthread.DBVMSteppingLost(sender: TObject);
+begin
+  //
+end;
+
 procedure TDebuggerthread.defaultConstructorcode;
 begin
   debuggerCS := TGuiSafeCriticalSection.Create;
@@ -2750,7 +2840,13 @@ begin
       begin
         globalDebug:=formsettings.cbGlobalDebug.checked;
         CurrentDebuggerInterface:=TKernelDebugInterface.create(globalDebug, formsettings.cbCanStepKernelcode.checked);
-      end;
+      end
+      else if formsettings.cbUseDBVMDebugger.checked then
+      begin
+        CurrentDebuggerInterface:=TDBVMDebugInterface.create;
+        TDBVMDebugInterface(CurrentDebuggerInterface).OnSteppingthreadLoss:=DBVMSteppingLost;
+
+      end
       {$endif}
 
       {$ifdef darwin}
@@ -2800,7 +2896,7 @@ end;
 
 constructor TDebuggerthread.MyCreate2(processID: THandle);
 begin
-
+  pid:=processID;
   defaultconstructorcode;
 
   createProcess:=false;
@@ -2809,7 +2905,7 @@ begin
 
   inherited Create(true);
 
-  Start;
+  Start; //will call DebugActiveProcess
   WaitTillAttachedOrError;
 
   if not terminated then lockSettings;

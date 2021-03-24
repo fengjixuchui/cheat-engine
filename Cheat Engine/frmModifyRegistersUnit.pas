@@ -147,6 +147,8 @@ uses formsettingsunit, MemoryBrowserFormUnit, debuggertypedefinitions,
 resourcestring
   rsModifyRegistersSAt = 'Modify registers(s) at %s';
   rsPleaseFillInAValidValueFor = 'Please fill in a valid value for';
+  rsFailureSettingDBVMChangeRegOnBP = 'Failure setting a DBVM ChangeRegOnBP '
+    +'breakpoint';
 
 constructor TfrmModifyRegisters.create(AOwner:tcomponent;address:ptrUint);
 var x: pbreakpoint;
@@ -613,6 +615,8 @@ var
   bo: integer;
   ob: byte;
 begin
+  zeromemory(@tempregedit, sizeof(tempregedit));
+
   tempregedit.address:=address;
   tempregedit.change_eax:=edtEAX.text<>'';
   tempregedit.change_ebx:=edtEBX.text<>'';
@@ -835,7 +839,7 @@ begin
 
       log('Calling dbvm_cloak_changeregonbp');
       if dbvm_cloak_changeregonbp(PA, changereginfo, address)<>0 then
-        MessageDlg('Failure setting a DBVM ChangeRegOnBP breakpoint', mtError,[mbok],0);
+        MessageDlg(rsFailureSettingDBVMChangeRegOnBP, mtError, [mbok], 0);
 
       memorybrowser.disassemblerview.Update;
       modalresult:=mrok;

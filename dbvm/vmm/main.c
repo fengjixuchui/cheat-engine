@@ -47,7 +47,7 @@
 
 
 
-void menu(void);
+
 void menu2(void);
 
 
@@ -145,8 +145,13 @@ void CheckCRCValues(void)
 void vmm_entry2_hlt(pcpuinfo currentcpuinfo)
 {
   UINT64 a,b,c,d;
+
+  nosendchar[getAPICID()]=0;
+
   if (currentcpuinfo)
     sendstringf("CPU %d : Terminating...\n\r",currentcpuinfo->cpunr);
+  else
+    sendstringf("Unknown(%d) terminating...", getcpunr() );
 
   while (1)
   {
@@ -258,10 +263,7 @@ void vmm_entry2(void)
 
   startvmx(cpuinfo);
 
-   // while (1); //debug
-
-
-
+  nosendchar[getAPICID()]=0;
   sendstringf("Application cpu returned from startvmx\n\r");
 
   vmm_entry2_hlt(cpuinfo);
@@ -286,6 +288,8 @@ void vmm_entry(void)
   if (isAP)
   {
     vmm_entry2();
+
+    nosendchar[getAPICID()]=0;
     sendstringf("vmm_entry2 has PHAILED!!!!");
     while (1) outportb(0x80,0xc7);
   }
@@ -319,8 +323,9 @@ void vmm_entry(void)
    * 12=vpid
    * 13=basic TSC emulation
    * 14=properly emulate debug step
+   * 15=some amd fixes/contiguous memory param/dbvmbp
    */
-  dbvmversion=14;
+  dbvmversion=15;
   int1redirection=1; //redirect to int vector 1 (might change this to the perfcounter interrupt in the future so I don't have to deal with interrupt prologue/epilogue)
   int3redirection=3;
   int14redirection=14;
@@ -338,9 +343,9 @@ void vmm_entry(void)
   MAXPHYADDRMASK=~(MAXPHYADDRMASK << MAXPHYADDR); //<< 36 = 0xfffffff000000000 .  after inverse : 0x0000000fffffffff
   MAXPHYADDRMASKPB=MAXPHYADDRMASK & 0xfffffffffffff000ULL; //0x0000000ffffff000
 
-  sendstringf("MAXPHYADDR=%d", MAXPHYADDR);
-  sendstringf("MAXPHYADDRMASK=%6", MAXPHYADDRMASK);
-  sendstringf("MAXPHYADDRMASKPB=%6", MAXPHYADDRMASK);
+  sendstringf("MAXPHYADDR=%d\n", MAXPHYADDR);
+  sendstringf("MAXPHYADDRMASK=%6\n", MAXPHYADDRMASK);
+  sendstringf("MAXPHYADDRMASKPB=%6\n", MAXPHYADDRMASKPB);
 
 
 
@@ -478,6 +483,7 @@ void vmm_entry(void)
       sendstringf("original->cpucount=%d\n", original->cpucount);
       if (original->cpucount>1000)
       {
+        nosendchar[getAPICID()]=0;
         sendstringf("More than 1000 cpu\'s are currently not supported\n");
         ddDrawRectangle(0,DDVerticalResolution-100,100,100,0xff0000);
         while (1);
@@ -616,6 +622,7 @@ void vmm_entry(void)
 
   if (GDT_BASE==NULL)
   {
+    nosendchar[getAPICID()]=0;
     sendstring("Memory allocation failed\n");
     ddDrawRectangle(0,DDVerticalResolution-100,100,100,0xff0000);
     while (1) outportb(0x80,0xc8);
@@ -2159,6 +2166,7 @@ void startvmx(pcpuinfo currentcpuinfo)
 
           launchVMX(currentcpuinfo);
 
+          nosendchar[getAPICID()]=0;
           sendstring("launchVMX returned\n");
           while (1) outportb(0x80,0xc9);
 
@@ -2249,6 +2257,7 @@ void startvmx(pcpuinfo currentcpuinfo)
 
         if (currentcpuinfo->vmxon_region==NULL)
         {
+          nosendchar[getAPICID()]=0;
           sendstringf(">>>>>>>>>>>>>>>>>>>>vmxon allocation has failed<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
           ddDrawRectangle(0,DDVerticalResolution-100,100,100,0xff0000);
           while (1) outportb(0x80,0xca);
@@ -2264,6 +2273,7 @@ void startvmx(pcpuinfo currentcpuinfo)
 
         if (currentcpuinfo->vmcs_region==NULL)
         {
+          nosendchar[getAPICID()]=0;
           ddDrawRectangle(0,DDVerticalResolution-100,100,100,0xff0000);
           sendstringf(">>>>>>>>>>>>>>>>>>>>vmcs_region allocation has failed<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
           while (1) outportb(0x80,0xcb);

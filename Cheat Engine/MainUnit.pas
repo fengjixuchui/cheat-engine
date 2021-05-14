@@ -3809,7 +3809,7 @@ end;
 procedure TMainForm.miSetDropdownOptionsClick(Sender: TObject);
 begin
   if addresslist.selectedrecord<>nil then
-    TFrmMemoryRecordDropdownSettings.create(addresslist.SelectedRecord).showmodal;
+    TFrmMemoryRecordDropdownSettings.create(addresslist.SelectedRecord, addresslist).showmodal;
 end;
 
 
@@ -4414,8 +4414,10 @@ var
   customtypes: TStringList;
   i: integer;
   islua: boolean;
+  oldpos: integer;
 begin
   reg := tregistry.Create;
+  oldpos:=vartype.ItemIndex;
   vartype.OnChange := nil;
   //disable the onchange event so CreateCustomType doesn't keep setting it
   try
@@ -4450,6 +4452,7 @@ begin
     freeandnil(reg);
     RefreshCustomTypes;
   finally
+    vartype.itemindex:=oldpos;
     vartype.OnChange := VarTypeChange;   //set the onchange event back
   end;
 end;
@@ -5210,8 +5213,8 @@ begin
     tabcounter := 3;
 
 
-    scantablist.Color := clBtnFace;
-    scantablist.Brush.Color := clBtnFace;
+    //scantablist.Color := clBtnFace;
+    scantablist.Brush.Color := panel5.color;
 
 
 
@@ -7682,8 +7685,9 @@ begin
           address := addresslist.selectedRecord.GetRealAddress
         else
         if res = mrYes then
-          address := symhandler.getAddressFromName(
-            addresslist.selectedRecord.interpretableaddress)
+        begin
+          addresslist.selectedRecord.parseAddressString(addresslist.selectedRecord.interpretableaddress, address);
+        end
         else
           exit;
       end;
@@ -7720,8 +7724,9 @@ begin
           address := addresslist.selectedRecord.GetRealAddress
         else
         if res = mrYes then
-          address := symhandler.getAddressFromName(
-            addresslist.selectedRecord.interpretableaddress)
+        begin
+          addresslist.selectedRecord.parseAddressString(addresslist.selectedRecord.interpretableaddress, address);
+        end
         else
           exit;
       end;

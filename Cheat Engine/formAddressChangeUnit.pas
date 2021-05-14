@@ -149,6 +149,8 @@ type
     LabelType: TLabel;
     LabelDescription: TLabel;
     lblValue: TLabel;
+    miCopyFinalAddressToClipboard: TMenuItem;
+    miCopyValueToClipboard: TMenuItem;
     miAddOffsetAbove: TMenuItem;
     miAddOffsetBelow: TMenuItem;
     miRemoveOffset: TMenuItem;
@@ -183,6 +185,7 @@ type
     lengthlabel: TLabel;
     pnlExtra: TPanel;
     pmOffset: TPopupMenu;
+    pmValue: TPopupMenu;
     RadioButton1: TRadioButton;
     RadioButton2: TRadioButton;
     RadioButton3: TRadioButton;
@@ -206,6 +209,8 @@ type
     procedure FormDestroy(Sender: TObject);
     procedure FormResize(Sender: TObject);
     procedure FormShow(Sender: TObject);
+    procedure miCopyFinalAddressToClipboardClick(Sender: TObject);
+    procedure miCopyValueToClipboardClick(Sender: TObject);
     procedure miAddAddressToListClick(Sender: TObject);
     procedure miCopyAddressToClipboardClick(Sender: TObject);
     procedure miAddOffsetAboveClick(Sender: TObject);
@@ -1389,8 +1394,8 @@ begin
   cbunicode.visible:=cbvarType.itemindex = 7;
   cbCodePage.visible:=cbunicode.Visible;
 
-  cbHex.Enabled:=not (cbvarType.itemindex in [0,7,8]);
-  cbSigned.Enabled:=cbHex.Enabled;
+  cbHex.Enabled:=not (cbvarType.itemindex in [0,7]);
+  cbSigned.Enabled:=not (cbvarType.itemindex in [0,5,6,7,8]);
 
   AdjustHeight;
 
@@ -1815,6 +1820,24 @@ begin
   end;
 
   //autosize:=true;
+end;
+
+procedure TformAddressChange.miCopyFinalAddressToClipboardClick(Sender: TObject);
+var e: boolean;
+    a: ptruint;
+begin
+  if (memoryrecord<>nil) then
+    e:=not memoryrecord.parseAddressString(utf8toansi(editAddress.Text),a)
+  else
+    a:=symhandler.getAddressFromName(utf8toansi(editAddress.Text),false,e);
+
+  if not e then
+    Clipboard.AsText:=inttohex(a,8);
+end;
+
+procedure TformAddressChange.miCopyValueToClipboardClick(Sender: TObject);
+begin
+  Clipboard.AsText:=copy(lblValue.Caption,2);
 end;
 
 procedure TformAddressChange.miAddAddressToListClick(Sender: TObject);

@@ -2196,11 +2196,11 @@ begin
   result:=0;
   try
     parameters:=lua_gettop(L);
-    if parameters=2 then
+    if parameters>=2 then
     begin
-      address:=lua_toaddress(L,-2,processhandle=GetCurrentProcess);
+      address:=lua_toaddress(L,1,processhandle=GetCurrentProcess);
 
-      v:=lua_tonumber(L, -1);
+      v:=lua_tonumber(L, 2);
 
       lua_pop(L, parameters);
 
@@ -3386,8 +3386,7 @@ begin
     else
       lc.synchronizeparam:=0;
 
-    tthread.Queue(tthread.CurrentThread, lc.synchronize);
-
+    tthread.Queue(nil, lc.queue);
 
     result:=0;
   end;
@@ -6887,6 +6886,8 @@ var
   i,j: integer;
 begin
   result:=0;
+  ZeroMemory(@log[0],4096);
+
   r:=dbvm_log_cr3values_stop(@log[0]);
   if r then
   begin
@@ -8415,6 +8416,18 @@ end;
 function lua_rdtsc(L: PLua_State): integer; cdecl;
 var v: qword;
 begin
+  {$ifdef cpu32}
+  asm
+    push edx
+    push edi
+    rdtsc
+    lea edi,v
+    mov [edi],eax
+    mov [edi+4],edx
+    pop edi
+    pop edx
+  end;
+  {$else}
   asm
     push rdx
     rdtsc
@@ -8426,6 +8439,7 @@ begin
 
     mov v,rax
   end;
+  {$endif}
 
   lua_pushinteger(L,v);
   result:=1;
@@ -13798,6 +13812,7 @@ var
   oldaddress: ptruint;
   i: integer;
 begin
+  {$ifdef windows}
   address:=0;
 
   if lua_gettop(L)>=2 then
@@ -13856,6 +13871,11 @@ begin
   end;
 
   result:=1;
+  {$else}
+  result:=2;
+  lua_pushnil(L);
+  lua_pushstring(L,'Not yet implemented');
+  {$endif}
 end;
 
 function lua_enumMemoryRegions(L: PLua_state): integer; cdecl;
@@ -14172,6 +14192,29 @@ begin
   exit(1);
 end;
 
+function lua_extractfilenamewithoutext(L: Plua_State): integer; cdecl;
+begin
+  if lua_gettop(L)>=1 then
+  begin
+    lua_pushstring(L, ExtractFileNameWithoutExt(Lua_ToString(L,1)));
+    exit(1);
+  end
+  else
+    exit(0);
+end;
+
+function lua_extractfileext(L: Plua_State): integer; cdecl;
+begin
+  if lua_gettop(L)>=1 then
+  begin
+    lua_pushstring(L, ExtractFileExt(Lua_ToString(L,1)));
+    exit(1);
+  end
+  else
+    exit(0);
+end;
+
+
 function lua_extractFileName(L: Plua_State): integer; cdecl;
 begin
   if lua_gettop(L)>=1 then
@@ -14192,6 +14235,7 @@ begin
   end
   else
     exit(0);
+
 end;
 
 function lua_trim(L: Plua_State): integer; cdecl;
@@ -14272,12 +14316,12 @@ var
   a: ptruint=0;
 
   bytes: tmemorystream=nil;
-  sl: TSymbolListHandler=nil;
+  symbollist: TStringlist=nil;
 
   errorlog: tstringlist=nil;
   bw: size_t;
 
-  si: PCESymbolInfo;
+
   targetself: boolean;
 
   ph: THandle;
@@ -14285,7 +14329,7 @@ var
   i: integer;
   list: TStringlist=nil;
   count: integer;
-
+  useKernelAlloc: boolean;
 begin
   if lua_gettop(L)>=1 then
   begin
@@ -14330,6 +14374,12 @@ begin
     else
       ph:=processhandle;
 
+    if lua_gettop(L)>=4 then
+      useKernelAlloc:=lua_toboolean(L,4)
+    else
+      useKernelAlloc:=false;
+
+
 
     bytes:=tmemorystream.Create;
     errorlog:=tstringlist.create;
@@ -14360,7 +14410,13 @@ begin
           exit(2);
         end;
 
-        a:=ptruint(VirtualAllocEx(ph,nil, bytes.Size*2,MEM_RESERVE or MEM_COMMIT,PAGE_EXECUTE_READWRITE));
+{$ifdef windows}
+        if useKernelAlloc then
+          a:=ptruint(kernelalloc(bytes.size*2))
+        else
+{$endif}
+          a:=ptruint(VirtualAllocEx(ph,nil, bytes.Size*2,MEM_RESERVE or MEM_COMMIT,PAGE_EXECUTE_READWRITE));
+
         if a=0 then
         begin
           lua_pop(L,lua_gettop(L));
@@ -14376,15 +14432,15 @@ begin
         errorlog.Clear;
       end;
 
-      sl:=TSymbolListHandler.create;
+      symbollist:=TStringlist.create;
 
 
       //actual compile
 
-      if ((list=nil) and (tcc.compileScript(s,a,bytes,sl,errorlog,nil,targetself)=false)) or
+      if ((list=nil) and (tcc.compileScript(s,a,bytes,symbollist,errorlog,nil,targetself)=false)) or
          ((list<>nil) and (
-                           ((isfile=false) and (tcc.compileScripts(list,a,bytes,sl,errorlog,targetself)=false) ) or
-                           ((isfile=true) and (tcc.compileProject(list,a,bytes,sl,errorlog,targetself)=false) )
+                           ((isfile=false) and (tcc.compileScripts(list,a,bytes,symbollist,errorlog,targetself)=false) ) or
+                           ((isfile=true) and (tcc.compileProject(list,a,bytes,symbollist,errorlog,targetself)=false) )
                            )) then
       begin
         lua_pop(L,lua_gettop(L));
@@ -14394,8 +14450,8 @@ begin
         if list<>nil then
           freeandnil(list);
 
-        if sl<>nil then
-          freeandnil(sl);
+        if symbollist<>nil then
+          freeandnil(symbollist);
 
         exit(2);
       end;
@@ -14403,17 +14459,15 @@ begin
       begin
         lua_newtable(L);
 
-        si:=sl.FindFirstSymbolFromBase(0);
-
-
-        while (si<>nil) and (si.address<a+bytes.size) do
+        for i:=0 to symbollist.count-1 do
         begin
-          lua_pushstring(L,si.originalstring);
-          lua_pushinteger(L,si.address);
-          lua_settable(L,-3);
-          si:=si.next;
+          if ptruint(symbollist.objects[i])<a+bytes.size then
+          begin
+            lua_pushstring(L,symbollist[i]);
+            lua_pushinteger(L,ptruint(symbollist.objects[i]));
+            lua_settable(L,-3);
+          end;
         end;
-
 
         result:=1;
 
@@ -14433,7 +14487,7 @@ begin
       end;
 
     finally
-      if sl<>nil then freeandnil(sl);
+      if symbollist<>nil then freeandnil(symbollist);
       freeandnil(bytes);
       freeandnil(errorlog);
     end;
@@ -14563,9 +14617,11 @@ function lua_getNextReadablePageCR3(L: Plua_State): integer; cdecl;
 var
   cr3: qword;
   address: qword;
-  newaddress: qword;
+  newaddress: ptruint;
 begin
+
   result:=0;
+  {$ifdef windows}
   if lua_gettop(L)>=2 then
   begin
     cr3:=lua_tointeger(L,1) and MAXPHYADDRMASKPB;
@@ -14578,6 +14634,7 @@ begin
     end;
 
   end;
+  {$endif}
 end;
 
 function lua_getPageInfoCR3(L: Plua_State): integer; cdecl;
@@ -14588,6 +14645,7 @@ var
 
 begin
   result:=0;
+  {$ifdef windows}
   if lua_gettop(L)>=2 then
   begin
     cr3:=lua_tointeger(L,1) and MAXPHYADDRMASKPB;
@@ -14612,6 +14670,7 @@ begin
       result:=1;
     end;
   end;
+  {$endif}
 
 end;
 
@@ -15340,6 +15399,8 @@ begin
     lua_register(L, 'getAutoRunPath', lua_getAutoRunPath);
     lua_register(L, 'getAutorunPath', lua_getAutoRunPath);
     lua_register(L, 'extractFileName', lua_extractFileName);
+    lua_register(L, 'extractFileExt', lua_extractFileExt);
+    lua_register(L, 'extractFileNameWithoutExt', lua_extractFileNameWithoutExt);
     lua_register(L, 'extractFilePath', lua_extractFilePath);
 
     lua_register(L, 'registerLuaFunctionHighlight', lua_registerLuaFunctionHighlight);

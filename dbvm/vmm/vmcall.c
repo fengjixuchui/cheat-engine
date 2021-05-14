@@ -937,15 +937,28 @@ int _handleVMCallInstruction(pcpuinfo currentcpuinfo, VMRegisters *vmregisters, 
       break;
 
     case VMCALL_CHANGEPASSWORD: //change password
-      sendstring("Password change\n\r");
-      Password1 = vmcall_instruction[3];
-      Password2 = vmcall_instruction[4];
+    {
+      typedef struct
+      {
+        VMCALL_BASIC vmcall;
+        QWORD Password1;
+        DWORD Password2;
+        QWORD Password3;
+      }  __attribute__((__packed__)) *PVMCALL_CHANGEPASSWORD_PARAM;
+      PVMCALL_CHANGEPASSWORD_PARAM p=(PVMCALL_CHANGEPASSWORD_PARAM)vmcall_instruction;
 
-      sendstringf("Password1=%8\n\r",Password1);
+      sendstring("Password change\n\r");
+      Password1 = p->Password1;
+      Password2 = p->Password2;
+      Password3 = p->Password3;
+
+      sendstringf("Password1=%6\n\r",Password1);
       sendstringf("Password2=%8\n\r",Password2);
+      sendstringf("Password3=%6\n\r",Password3);
 
       vmregisters->rax=0;
       break;
+    }
 
     case 2: //toggle memory cloak
       vmregisters->rax = 0xcedead; //not implemented
@@ -1830,6 +1843,9 @@ int _handleVMCallInstruction(pcpuinfo currentcpuinfo, VMRegisters *vmregisters, 
         //already exists, just tell this cpu to do the logging
         if (isAMD)
           currentcpuinfo->vmcb->InterceptCR0_15Write|=(1<<3); //break on cr3 write
+        else
+        if (canToggleCR3Exit)
+            vmwrite(vm_execution_controls_cpu, vmread(vm_execution_controls_cpu) | PPBEF_CR3LOAD_EXITING | PPBEF_CR3STORE_EXITING);
 
         vmregisters->rax=0;
         break;
@@ -1855,12 +1871,29 @@ int _handleVMCallInstruction(pcpuinfo currentcpuinfo, VMRegisters *vmregisters, 
       nosendchar[getAPICID()]=0;
       sendstringf("Stopping CR3 log.  CR3ValuePos=%d\n",CR3ValuePos);
 
+      if (isAMD)
+        currentcpuinfo->vmcb->InterceptCR0_15Write&=~(1<<3);
+      else
+      if (canToggleCR3Exit)
+      {
+        vmwrite(vm_execution_controls_cpu, vmread(vm_execution_controls_cpu) & ~(PPBEF_CR3LOAD_EXITING | PPBEF_CR3STORE_EXITING));
+      }
+
 
       if (CR3ValueLog==NULL)
       {
         vmregisters->rax=0;
         break;
       }
+
+      if (param->destination==0) //just a toggle to turn it off, and no need for results
+      {
+        CR3ValueLog=NULL;
+        CR3ValuePos=0;
+        vmregisters->rax=0;
+        break;
+      }
+
 
       csEnter(&CR3ValueLogCS);
 
@@ -2328,14 +2361,16 @@ int _handleVMCall(pcpuinfo currentcpuinfo, VMRegisters *vmregisters)
 
 
   //check password, if false, raise unknown opcode exception
-  if ((ULONG)vmregisters->rdx != Password1)
+  if ((vmregisters->rdx != Password1) && (vmregisters->rcx != Password3))
   {
     int x;
-    sendstringf("Invalid Password1. Given=%8 should be %8\n\r",(ULONG)vmregisters->rdx, Password1);
+    sendstringf("Invalid register password Given=%6 %6 should be %6 %6\n\r",vmregisters->rdx, vmregisters->rcx, Password1, Password3);
     x = raiseInvalidOpcodeException(currentcpuinfo);
     sendstringf("return = %d\n\r",x);
     return x;
   }
+
+
 
   //sendstringf("Password1 is valid\n\r");
 

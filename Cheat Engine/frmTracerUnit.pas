@@ -193,7 +193,9 @@ type
     registerCompareIgnore: array [0..16] of boolean;
 
     da: TDisassembler;
+    {$ifdef windows}
     dacr3: TCR3Disassembler;
+    {$endif}
 
     defaultBreakpointMethod: TBreakpointmethod;
 
@@ -284,8 +286,9 @@ begin
   bytesize:=0;
   if cr3=0 then
     ReadProcessMemory(processhandle, pointer(referencedaddress), bytes, datasize, bytesize)
+  {$ifdef windows}
   else
-    ReadProcessMemoryCR3(cr3, pointer(referencedaddress), bytes, datasize, bytesize);
+    ReadProcessMemoryCR3(cr3, pointer(referencedaddress), bytes, datasize, bytesize){$endif};
 end;
 
 procedure TTraceDebugInfo.SaveStack;
@@ -300,8 +303,9 @@ begin
       ReadProcessMemory(processhandle, pointer(c.{$ifdef cpu64}Rsp{$else}esp{$endif}), stack.stack, stack.savedsize, stack.savedsize);
     end;
   end
+  {$ifdef windows}
   else
-    ReadProcessMemoryCR3(cr3, pointer(c.{$ifdef cpu64}Rsp{$else}esp{$endif}), stack.stack, savedStackSize, stack.savedsize);
+    ReadProcessMemoryCR3(cr3, pointer(c.{$ifdef cpu64}Rsp{$else}esp{$endif}), stack.stack, savedStackSize, stack.savedsize){$endif};
 end;
 
 constructor TTraceDebugInfo.createFromStream(s: tstream);
@@ -533,14 +537,18 @@ begin
       da.showsections:=symhandler.showsections;
     end;
 
+    {$ifdef windows}
     if isdbvminterface and (dacr3=nil) then
     begin
       dacr3:=tcr3disassembler.Create;
-      da.showsymbols:=symhandler.showsymbols;
-      da.showmodules:=symhandler.showmodules;
-      da.showsections:=symhandler.showsections;
+      dacr3.showsymbols:=symhandler.showsymbols;
+      dacr3.showmodules:=symhandler.showmodules;
+      dacr3.showsections:=symhandler.showsections;
     end;
 
+
+
+    {$ifdef cpu64}
     if isdbvminterface and (debuggerthread.CurrentThread.context.P2Home<>0) then
     begin
       cr3:=debuggerthread.CurrentThread.context.P2Home;
@@ -548,6 +556,8 @@ begin
       dacr3.CR3:=cr3;
     end
     else
+    {$endif}
+    {$endif}
     begin
       currentda:=da;
       cr3:=0;
@@ -1077,16 +1087,19 @@ begin
 
           d:=TTraceDebugInfo.Create;
           d.instructionsize:=a-basic^.RIP;
+          {$ifdef cpu64}
           d.c.P1Home:=basic^.FSBASE; //just using these field for storage
           d.c.p2home:=basic^.GSBASE;
           d.c.p3home:=basic^.CR3;
+          {$endif}
           d.c.EFlags:=basic^.FLAGS;
-          d.c.Rax:=basic^.RAX;
-          d.c.Rbx:=basic^.RBX;
-          d.c.Rcx:=basic^.RCX;
-          d.c.Rdx:=basic^.RDX;
-          d.c.Rsi:=basic^.RSI;
-          d.c.Rdi:=basic^.RDI;
+          d.c.{$ifdef cpu32}Eax{$else}Rax{$endif}:=basic^.RAX;
+          d.c.{$ifdef cpu32}Ebx{$else}Rbx{$endif}:=basic^.RBX;
+          d.c.{$ifdef cpu32}Ecx{$else}Rcx{$endif}:=basic^.RCX;
+          d.c.{$ifdef cpu32}Edx{$else}Rdx{$endif}:=basic^.RDX;
+          d.c.{$ifdef cpu32}Esi{$else}Rsi{$endif}:=basic^.RSI;
+          d.c.{$ifdef cpu32}Edi{$else}Rdi{$endif}:=basic^.RDI;
+          {$ifdef cpu64}
           d.c.R8:=basic^.R8;
           d.c.R9:=basic^.R9;
           d.c.R10:=basic^.R10;
@@ -1095,16 +1108,22 @@ begin
           d.c.R13:=basic^.R13;
           d.c.R14:=basic^.R14;
           d.c.R15:=basic^.R15;
-          d.c.Rbp:=basic^.RBP;
-          d.c.Rsp:=basic^.RSP;
-          d.c.Rip:=basic^.RIP;
+          {$endif}
+          d.c.{$ifdef cpu32}Ebp{$else}Rbp{$endif}:=basic^.RBP;
+          d.c.{$ifdef cpu32}Esp{$else}Rsp{$endif}:=basic^.RSP;
+          d.c.{$ifdef cpu32}Eip{$else}Rip{$endif}:=basic^.RIP;
           d.c.SegCs:=basic^.CS;
           d.c.SegDs:=basic^.DS;
           d.c.SegEs:=basic^.ES;
           d.c.SegSs:=basic^.SS;
           d.c.SegFs:=basic^.FS;
           d.c.SegGs:=basic^.GS;
+
+          {$ifdef cpu64}
           copymemory(@d.c.FltSave, fpu,512);
+          {$else}
+          copymemory(@d.c.ext, fpu,512);
+          {$endif}
 
           d.instruction:=s;
           d.referencedAddress:=0;
@@ -1274,6 +1293,7 @@ begin
         end;
       end;
 
+      {$ifdef windows}
       if cbDBVMBreakAndTrace.checked then
       begin
         if loaddbvmifneeded(rsDBVMBreakAndTraceNeedsDBVM)=false then exit;
@@ -1364,6 +1384,7 @@ begin
 
       end
       else
+      {$endif}
       if startdebuggerifneeded then
       begin
         isdbvminterface:=CurrentDebuggerInterface is TDBVMDebugInterface;
@@ -1890,6 +1911,11 @@ begin
   if debuggerthread<>nil then
     debuggerthread.stopBreakAndTrace(self);
 
+
+
+
+
+
   if comparetv<>nil then
   begin
     cleanuptv(comparetv);
@@ -1901,7 +1927,10 @@ begin
   action:=cafree; //if still buggy, change to cahide
 
   if DBVMStatusUpdater<>nil then
+  begin
+    dbvm_cloak_traceonbp_stoptrace;
     freeandnil(DBVMStatusUpdater);
+  end;
 
   if physicaladdress<>0 then
     dbvm_cloak_traceonbp_remove(physicaladdress);
@@ -1917,8 +1946,10 @@ begin
   if da<>nil then
     da.free;
 
+  {$ifdef windows}
   if dacr3<>nil then
     dacr3.free;
+  {$endif}
 
   saveformposition(self);
 end;

@@ -82,11 +82,13 @@ unsigned char inportb(unsigned int port)
 
 void outportb(unsigned int port,unsigned char value)
 {
+#ifdef DEBUG
   if (port==0x80)
   {
     nosendchar[getAPICID()]=0;
     sendstringf_nolock("            -  Debug Code %2  -\n", value);
   }
+#endif
    asm volatile ("outb %%al,%%dx": :"d" (port), "a" (value));
 }
 
@@ -1175,7 +1177,9 @@ void csLeave(PcriticalSection CS)
 
   if ((CS->locked) && (CS->apicid==apicid))
   {
+    asm volatile ("": : :"memory");
     CS->lockcount--;
+    asm volatile ("": : :"memory");
     if (CS->lockcount==0)
     {
       //unlock
@@ -1188,11 +1192,20 @@ void csLeave(PcriticalSection CS)
   }
   else
   {
+#ifdef DEBUG
     nosendchar[getAPICID()]=0;
     sendstringf_nolock("csLeave called for a non-locked or non-owned critical section.  Name=%s\n", CS->name);
+#endif
     ddDrawRectangle(0,DDVerticalResolution-100,100,100,0xff0000);
     while (1)
     {
+#ifdef DEBUG
+      if (CS->ignorelock)
+      {
+        outportb(0x80,0xc5); //todo: return
+      }
+#endif
+
       outportb(0x80,0xc2);
       if (locked)
       {
@@ -1202,6 +1215,8 @@ void csLeave(PcriticalSection CS)
       {
         outportb(0x80,0xc4);
       }
+
+
     }
   }
 }

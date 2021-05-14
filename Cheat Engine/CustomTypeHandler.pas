@@ -65,9 +65,7 @@ type
 
     //these 4 functions are just to make it easier
     procedure ConvertToData(f: single; output: pointer; address: ptruint); overload;
-    function ConvertFromData(data: pointer; address: ptruint): single; overload;
     procedure ConvertToData(i: integer; output: pointer; address: ptruint); overload;
-    function ConvertFromData(data: pointer; address: ptruint): integer; overload;
 
     function ConvertDataToInteger(data: pointer; address: ptruint): integer;
     function ConvertDataToIntegerLua(data: pbytearray; address: ptruint): integer;
@@ -455,22 +453,15 @@ begin
   ConvertFloatToData(f, output, address);
 end;
 
-function TCustomType.ConvertFromData(data: pointer; address: ptruint): single;
-begin
-  result:=ConvertDataToFloat(data, address);
-end;
-
 procedure TCustomType.ConvertToData(i: integer; output: pointer; address: ptruint);
 begin
   ConvertIntegerToData(i, output, address);
 end;
 
-function TCustomType.ConvertFromData(data: pointer; address: ptruint): integer;
-begin
-  result:=ConvertDataToInteger(data, address);
-end;
+
 
 procedure TCustomType.unloadscript;
+var enablepos, disablepos: integer;
 begin
   {$IFNDEF jni}
   if fCustomTypeType=cttAutoAssembler then
@@ -480,7 +471,10 @@ begin
 
     if currentscript<>nil then
     begin
-      autoassemble(currentscript,false, false, false, true, tdisableinfo(disableinfo)); //popupmessages is false so it won't complain if there is no disable section
+      getenableanddisablepos(currentscript, enablepos, disablepos);
+      if disablepos>=0 then
+        autoassemble(currentscript,false, false, false, true, tdisableinfo(disableinfo));
+
       freeandnil(currentscript);
     end;
   end;

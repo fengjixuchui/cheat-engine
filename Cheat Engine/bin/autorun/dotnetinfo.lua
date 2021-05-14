@@ -989,10 +989,14 @@ public class patched<classname> : <classname>
 local references, sysfile=dotnetpatch_getAllReferences() --you're free to build your own list
 local csfile,msg=compileCS(csharpscript, references, sysfile)
 
-if csfile==nil then 
-  if msg==nil then msg=' (?Unknown error?)' end
-  messageDialog('Compilation error:'..msg, mtError, mbOK) --show compile error in a dialog instead of a lua error only
-  error(msg)
+if csfile==nil then
+  --sometimes having the sysfile causes an issue. Try without  
+  csfile,msg=compileCS(csharpscript, references)
+  if csfile==nil then 
+    if msg==nil then msg=' (?Unknown error?)' end
+    messageDialog('Compilation error:'..msg, mtError, mbOK) --show compile error in a dialog instead of a lua error only
+    error(msg)
+  end
 end
 
 --still here, c# dll created, now inject and hook
@@ -1015,7 +1019,7 @@ end
 if syntaxcheck then return end
 
 if dotnetdetours['<fullnameDotFormat>'] then
-  autoassemble(dotnetdetours['<fullnameDotFormat>'].disablescript, dotnetdetours['<fullnameDotFormat>'].disableinfo) 
+  autoAssemble(dotnetdetours['<fullnameDotFormat>'].disablescript, dotnetdetours['<fullnameDotFormat>'].disableinfo) 
 end
 {$asm}
 ]]
@@ -1990,8 +1994,13 @@ function miDotNetInfoClick(sender)
   frmDotNetInfo.miBrowseField.OnClick=function(sender) miBrowseFieldClick(frmDotNetInfo, sender) end
   
   frmDotNetInfo.pmFields.OnPopup=function(sender)
-    frmDotNetInfo.miBrowseField.Visible=frmDotNetInfo.lvFields.Selected and frmDotNetInfo.comboFieldBaseAddress.Text~=''
+    frmDotNetInfo.miBrowseField.Enabled=frmDotNetInfo.lvFields.Selected and frmDotNetInfo.comboFieldBaseAddress.Text~=''    
   end
+  
+  frmDotNetInfo.pmMethods.OnPopup=function(sender)
+    frmDotNetInfo.miInvokeMethod.Enabled=(frmDotNetInfo.comboFieldBaseAddress.Text~='') and (getAddressSafe(frmDotNetInfo.comboFieldBaseAddress.Text)~=nil)
+  end
+  
   --Init
   
   

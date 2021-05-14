@@ -6,7 +6,7 @@ interface
 
 uses
   {$ifdef darwin}
-  macport, LCLType,
+  macport, LCLType, macportdefines,
   {$endif}
   {$ifdef windows}
   jwawindows, windows,imagehlp,
@@ -906,9 +906,10 @@ end;
 function TMemoryBrowser.ReadProcessMemory(hProcess: THandle; lpBaseAddress, lpBuffer: Pointer; nSize: size_t; var lpNumberOfBytesRead: PTRUINT): BOOL;
 begin
   if fcr3=0 then
-    result:=newkernelhandler.ReadProcessMemory(hProcess, lpBaseAddress, lpBuffer, nsize, lpNumberOfBytesRead)
+    result:={$ifdef windows}newkernelhandler.{$endif}{$ifdef darwin}macport.{$endif}ReadProcessMemory(hProcess, lpBaseAddress, lpBuffer, nsize, lpNumberOfBytesRead)
+  {$ifdef windows}
   else
-    result:=ReadProcessMemoryCR3(fcr3,lpBaseAddress, lpBuffer, nsize, lpNumberOfBytesRead);
+    result:=ReadProcessMemoryCR3(fcr3,lpBaseAddress, lpBuffer, nsize, lpNumberOfBytesRead){$endif};
 end;
 
 
@@ -3157,14 +3158,20 @@ begin
   if(canceled)then
     exit;
 
-  oldAddress:=disassemblerview.SelectedAddress;
   try
-    disassemblerview.SelectedAddress:=symhandler.getaddressfromname(newaddress);
-  except
-    disassemblerview.SelectedAddress:=getaddress(newaddress);
-  end;
+    oldAddress:=disassemblerview.SelectedAddress;
+    try
+      disassemblerview.SelectedAddress:=symhandler.getaddressfromname(newaddress);
+    except
+      disassemblerview.SelectedAddress:=getaddress(newaddress);
+    end;
 
-  backlist.Push(pointer(oldAddress));
+    backlist.Push(pointer(oldAddress));
+
+  except
+    on e:exception do
+      MessageDlg(e.Message,mtError,[mbok],0);
+  end;
 end;
 
 procedure TMemoryBrowser.Search1Click(Sender: TObject);
@@ -3461,7 +3468,9 @@ begin
         end
         else
         begin
+          {$ifdef windows}
           WriteProcessMemoryCR3(fcr3, pointer(address),@bytes[0], bytelength,a);
+          {$endif}
         end;
 
         hexview.update;
@@ -4039,6 +4048,17 @@ begin
   {$ifndef net}
   if frmdissectcode=nil then
     frmdissectcode:=tfrmDissectcode.create(self);
+
+  if disassemblerview.SelectedAddress2<>disassemblerview.SelectedAddress then
+  begin
+    frmDissectCode.edtCustomRangeStart.text:=inttohex(MinX(disassemblerview.SelectedAddress, disassemblerview.SelectedAddress2),8);
+    frmDissectCode.edtCustomRangeStop.text:=inttohex(MaxX(disassemblerview.SelectedAddress, disassemblerview.SelectedAddress2),8);
+  end
+  else
+  begin
+    frmDissectCode.edtCustomRangeStart.text:='';
+    frmDissectCode.edtCustomRangeStop.text:='';
+  end;
 
   frmdissectcode.Show;
   {$endif}

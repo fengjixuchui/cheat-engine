@@ -668,6 +668,11 @@ begin
   visibleDisassembler.showmodules:=symhandler.showModules;
   visibleDisassembler.showsymbols:=symhandler.showsymbols;
   visibleDisassembler.showsections:=symhandler.showsections;
+
+  currentDisassembler.showmodules:=symhandler.showModules;
+  currentDisassembler.showsymbols:=symhandler.showsymbols;
+  currentDisassembler.showsections:=symhandler.showsections;
+  currentDisassembler.is64bitOverride:=visibleDisassembler.is64bitOverride;
 end;
 
 procedure TDisassemblerview.StatusInfoLabelCopy(sender: TObject);
@@ -1141,6 +1146,7 @@ end;
 
 procedure TDisassemblerview.setCR3(pa: QWORD);
 begin
+  {$ifdef windows}
   if pa=fcr3 then exit;
 
   freeAndNil(currentDisassembler);
@@ -1157,6 +1163,7 @@ begin
   end;
 
   fCR3:=pa;
+  {$endif}
 
   update;
 end;

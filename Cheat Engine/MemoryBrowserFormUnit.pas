@@ -741,7 +741,8 @@ uses Valuechange, MainUnit, debugeventhandler, findwindowunit,
   vmxfunctions, frmstructurecompareunit, globals, UnexpectedExceptionsHelper,
   frmExceptionRegionListUnit, frmExceptionIgnoreListUnit, frmcodefilterunit,
   frmDBVMWatchConfigUnit, DBK32functions, DPIHelper, DebuggerInterface,
-  DebuggerInterfaceAPIWrapper, BreakpointTypeDef, CustomTypeHandler;
+  DebuggerInterfaceAPIWrapper, BreakpointTypeDef, CustomTypeHandler,
+  frmSourceDisplayUnit, sourcecodehandler, tcclib;
 
 
 resourcestring
@@ -2547,6 +2548,8 @@ end;
 procedure TMemoryBrowser.disassemblerviewDblClick(Sender: TObject);
 var m: TPoint;
   a: ptruint;
+  lni: PLineNumberInfo;
+  f: TfrmSourceDisplay;
 begin
   //find what column is clicked
 
@@ -2557,14 +2560,25 @@ begin
   begin
     backlist.Push(pointer(disassemblerview.SelectedAddress));
     disassemblerview.SelectedAddress:=a;
-  end
-  else
-  begin
-    if m.x>(disassemblerview.getheaderWidth(0)+disassemblerview.getheaderWidth(1)+disassemblerview.getheaderWidth(2)) then
-      miUserdefinedComment.click //comment click
-    else
-      assemble1.Click;
+    exit;
   end;
+
+  lni:=disassemblerview.getSourceCodeAtPos(m);
+  if lni<>nil then
+  begin
+    f:=getSourceViewForm(lni);
+    if f<>nil then
+      f.show();
+    exit;
+  end;
+
+  if m.x>(disassemblerview.getheaderWidth(0)+disassemblerview.getheaderWidth(1)+disassemblerview.getheaderWidth(2)) then
+  begin
+    miUserdefinedComment.click; //comment click
+    exit;
+  end;
+
+  assemble1.Click;
 end;
 
 procedure TMemoryBrowser.FormCreate(Sender: TObject);
@@ -4130,6 +4144,9 @@ begin
 
       DebuggerThread.ToggleOnExecuteBreakpoint(disassemblerview.SelectedAddress,bpm);
       disassemblerview.Update;
+
+      ApplySourceCodeDebugUpdate;
+
     end;
   except
     on e:exception do MessageDlg(e.message,mtError,[mbok],0);
@@ -5570,6 +5587,8 @@ begin
   miDebugSetAddress.enabled:=false;
   stacktrace1.Enabled:=false;
   miDebugExecuteTillReturn.Enabled:=false;
+
+  ApplySourceCodeDebugUpdate;
   {Other tasks}
   //...
 end;
@@ -6244,6 +6263,8 @@ begin
 
 
   ApplyFollowRegister;
+  ApplySourceCodeDebugUpdate;
+
   {for i:=0 to 4095 do
   begin
     if pbyte(ptruint(laststack)+stacktracesize+i)^<>$ce then

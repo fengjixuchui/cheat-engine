@@ -1,4 +1,4 @@
-unit DBK32functions;
+ unit DBK32functions;
 
 {$MODE Delphi}
 
@@ -15,7 +15,7 @@ uses
 
 {$endif}
 
-const currentversion=2000026;
+const currentversion=2000027;
 
 const FILE_ANY_ACCESS=0;
 const FILE_SPECIAL_ACCESS=FILE_ANY_ACCESS;
@@ -1586,6 +1586,8 @@ begin
   numberofbytesread:=0;
   //find the hprocess in the handlelist, if it isn't use the normal method (I could of course use NtQueryProcessInformation but it's undocumented and I'm too lazy to dig it up
 
+  if handlemapmrew=nil then exit(windows.ReadProcessMemory(hProcess,pointer(ptrUint(lpBaseAddress)),lpBuffer,nSize,NumberOfBytesRead));
+
   handlemapmrew.Beginread;
   validhandle:=handlemap.GetData(hProcess,l);
   handlemapmrew.Endread;
@@ -2868,7 +2870,7 @@ begin
     result:=deviceiocontrol(hdevice,cc,@input,sizeof(Input),nil,0,cc,nil);
 
 
-    configure_vmx(vmx_password1, vmx_password2);
+    configure_vmx(vmx_password1, vmx_password2, vmx_password3);
 
     if parameters<>nil then
     begin
@@ -3135,7 +3137,7 @@ var sav: pchar;
  //   win32size:dword;
     servicename,sysfile: widestring;
     ultimapservicename, ultimapsysfile: widestring;
-    vmx_p1_txt,vmx_p2_txt: string;
+    vmx_p1_txt,vmx_p2_txt,vmx_p3_txt: string;
 
 
     reg: tregistry;
@@ -3145,6 +3147,8 @@ var sav: pchar;
 //    servicestatus: _service_status;
 procedure DBK32Initialize;
 begin
+
+  outputdebugstring('DBK32Initialize');
   try
     if hdevice=INVALID_HANDLE_VALUE then
     begin
@@ -3174,14 +3178,14 @@ begin
         else
           dataloc:=dataloc+'driver64.dat';
 
-        outputdebugstring('b');
         if not fileexists(dataloc) then
         begin
-          outputdebugstring('b1');
-          servicename:='CEDRIVER60';
+
+          servicename:='CEDRIVER73';
           ultimapservicename:='ULTIMAP2';
           processeventname:='DBKProcList60';
           threadeventname:='DBKThreadList60';
+
           if iswow64 then
           begin
             sysfile:='dbk64.sys';
@@ -3195,6 +3199,8 @@ begin
 
           vmx_p1_txt:='76543210';
           vmx_p2_txt:='fedcba98';
+          vmx_p3_txt:='90909090';
+
         end
         else
         begin
@@ -3206,6 +3212,7 @@ begin
           readln(driverdat,sysfile);
           readln(driverdat,vmx_p1_txt);
           readln(driverdat,vmx_p2_txt);
+          readln(driverdat,vmx_p3_txt);
           readln(driverdat,ultimapservicename);
           readln(driverdat,ultimapsysfile);
           closefile(driverdat);
@@ -3219,7 +3226,7 @@ begin
 
 
       try
-        configure_vmx(strtoint('$'+vmx_p1_txt), strtoint('$'+vmx_p2_txt) );
+        configure_vmx(strtoint64('$'+vmx_p1_txt), strtoint('$'+vmx_p2_txt), StrToInt64('$'+vmx_p3_txt)  );
       except
         //couldn't parse the password
       end;
@@ -3232,7 +3239,6 @@ begin
         hUltimapDevice:=INVALID_HANDLE_VALUE;
         exit;
       end;
-
 
       if hscmanager<>0 then
       begin
@@ -3292,11 +3298,7 @@ begin
             reg.WriteString('A','\Device\'+ultimapservicename);
             reg.WriteString('B','\DosDevices\'+ultimapservicename);
 
-            if startservice(hultimapservice,0,pointer(sav))=false then
-            begin
-              outputdebugstring('Failed to load ultimap2:'+inttostr(GetLastError));
-            end
-            else
+            if startservice(hultimapservice,0,pointer(sav)) then
               OutputDebugString('started ultimap2');
 
             closeservicehandle(hUltimapService);
@@ -3315,13 +3317,8 @@ begin
           reg.DeleteValue('B');
 
           freeandnil(reg);
-        end
-        else
-          OutputDebugString('Failed to open/create ultimap service');
+        end;
 
-
-        if hultimapDevice=INVALID_HANDLE_VALUE then
-          OutputDebugString('Failed to open ultimap device');
 
         //load DBK
 
@@ -3361,6 +3358,7 @@ begin
 
 
         end;
+
 
         if hservice<>0 then
         begin
@@ -3475,7 +3473,9 @@ begin
 
 
         closeservicehandle(hscmanager);
-      end;
+      end
+      else
+        OutputDebugString('hscmanager=0');
     end;
 
   finally

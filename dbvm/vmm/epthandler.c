@@ -119,6 +119,77 @@ void ept_invalidate()
 }
 
 
+int shownfirst=0;
+void ept_hideDBVMPhysicalAddresses_callbackIntel(QWORD VirtualAddress UNUSED, QWORD PhysicalAddress, int size UNUSED, PPTE_PAE entry UNUSED, pcpuinfo currentcpuinfo)
+{
+
+  if (shownfirst==0)
+  {
+    sendstringf("%6", PhysicalAddress);
+    shownfirst=1;
+  }
+
+
+  QWORD eptentryAddress=EPTMapPhysicalMemory(currentcpuinfo,PhysicalAddress,1);
+  PEPT_PTE eptentry=mapPhysicalMemory(eptentryAddress,8);
+
+  eptentry->PFN=MAXPHYADDRMASK >> 13; //unallocated memory (using 13 as sometimes accessing the most significant bit of the allowed PA will crash a system)
+  eptentry->MEMTYPE = 0;
+
+  unmapPhysicalMemory(eptentry,8);
+
+  ept_invalidate();
+  currentcpuinfo->eptUpdated=1;
+}
+
+void ept_hideDBVMPhysicalAddresses_callbackAMD(QWORD VirtualAddress UNUSED, QWORD PhysicalAddress, int size UNUSED, PPTE_PAE entry UNUSED, pcpuinfo currentcpuinfo)
+{
+  QWORD npentryAddress=NPMapPhysicalMemory(currentcpuinfo,PhysicalAddress,1);
+  PPTE_PAE npentry=mapPhysicalMemory(npentryAddress,8);
+  npentry->PFN=MAXPHYADDRMASK >> 13;
+
+  unmapPhysicalMemory((void *)npentry,8);
+
+  ept_invalidate();
+}
+
+
+void ept_hideDBVMPhysicalAddresses(pcpuinfo currentcpuinfo)
+{
+  shownfirst=0;
+
+  nosendchar[getAPICID()]=0;
+  sendstringf("  ept_hideDBVMPhysicalAddresses()\n");
+  MMENUMPAGESCALLBACK callback=isAMD?(MMENUMPAGESCALLBACK)ept_hideDBVMPhysicalAddresses_callbackAMD:(MMENUMPAGESCALLBACK)ept_hideDBVMPhysicalAddresses_callbackIntel;
+  csEnter(&currentcpuinfo->EPTPML4CS);
+  sendstringf("    Calling mmEnumAllPageEntries\n");
+  mmEnumAllPageEntries(callback, 1, (void*)currentcpuinfo);
+  sendstringf("    Returned from mmEnumAllPageEntries\n");
+  csLeave(&currentcpuinfo->EPTPML4CS);
+}
+
+void ept_hideDBVMPhysicalAddressesAllCPUs()
+//walk the dbvm pagetables and map each physical address found to a random address until VA BASE_VIRTUAL_ADDRESS+4096*PhysicalPageListSize;
+//todo: If for some reason this takes too long and triggers a timeout, switch to per cpu
+{
+
+  nosendchar[getAPICID()]=0;
+  sendstringf("ept_hideDBVMPhysicalAddressesAllCPUs()\n");
+
+  pcpuinfo c=firstcpuinfo;
+
+  while (c)
+  {
+    sendstringf("cpu %d:\n", c->cpunr);
+
+    ept_hideDBVMPhysicalAddresses(c);
+    c=c->next;
+  }
+
+  sendstringf("done\n");
+}
+
+
 void ept_reset_cb(QWORD address, void *data UNUSED)
 {
   map_setEntry(CloakedPagesMap, address, NULL);
@@ -1266,7 +1337,7 @@ BOOL ept_handleFrozenThread(pcpuinfo currentcpuinfo, VMRegisters *vmregisters, F
 
 
 
-    //restore the state according to the saved state (could have been changed) and do a single step or run
+    //restore the state according to the saved state (could have been changed) and do a single step or run  (this also undoes the state used value in rax, which is good)
     if (isAMD)
     {
       currentcpuinfo->vmcb->RIP=BrokenThreadList[id].state.basic.RIP;
@@ -1386,18 +1457,22 @@ BOOL ept_handleSoftwareBreakpoint(pcpuinfo currentcpuinfo, VMRegisters *vmregist
         if (BrokenThreadList[i].inuse)
         {
           QWORD cr3;
-          QWORD rip;
+          QWORD rip,rax;
 
           if (isAMD)
           {
             cr3=currentcpuinfo->vmcb->CR3;
             rip=currentcpuinfo->vmcb->RIP;
+            rax=currentcpuinfo->vmcb->RAX;
           }
           else
           {
             cr3=vmread(vm_guest_cr3);
             rip=vmread(vm_guest_rip);
+            rax=vmregisters->rax;
           }
+
+          if ((QWORD)rax!=(QWORD)i) continue; //rax should match the brokenthreadlist id
 
           //warning: In windows, kernelmode gsbase changes depending on the cpu so can not be used as identifier then
 
@@ -1676,9 +1751,13 @@ int ept_handleStepAndBreak(pcpuinfo currentcpuinfo, VMRegisters *vmregisters, FX
       fillPageEventBasic(&BrokenThreadList[brokenthreadid].state.basic, vmregisters);
       BrokenThreadList[brokenthreadid].state.fpudata=*fxsave;
 
-      //adjust RIP
+      //adjust RIP and RAX  (rip points to the parking spot, RAX contains the specific brokenthreadid (gets undone on resume anyhow)
+      vmregisters->rax=brokenthreadid;
       if (isAMD)
+      {
         currentcpuinfo->vmcb->RIP=newRIP;
+        currentcpuinfo->vmcb->RAX=brokenthreadid;
+      }
       else
         vmwrite(vm_guest_rip, newRIP);
 
@@ -2358,6 +2437,11 @@ BOOL ept_handleWatchEvent(pcpuinfo currentcpuinfo, VMRegisters *registers, PFXSA
           if (BrokenThreadList[i].inuse==0)
           {
             BrokenThreadList[i]=e;
+            if (isAMD)
+              currentcpuinfo->vmcb->RAX=i; //rax was already saved in the pageeventbasic structure. Use rax as brokenthreadlist id
+            else
+              registers->rax=i;
+
             csLeave(&BrokenThreadListCS);
             return TRUE; //no need to log it or continue
           }
@@ -2365,6 +2449,11 @@ BOOL ept_handleWatchEvent(pcpuinfo currentcpuinfo, VMRegisters *registers, PFXSA
 
         //still here, so add it to the end
         BrokenThreadList[BrokenThreadListPos]=e;
+        if (isAMD)
+          currentcpuinfo->vmcb->RAX=BrokenThreadListPos;
+        else
+          registers->rax=BrokenThreadListPos;
+
         BrokenThreadListPos++;
         csLeave(&BrokenThreadListCS);
 
@@ -3553,7 +3642,7 @@ void getMTRRMapInfo(QWORD startaddress, QWORD size, int *fullmap, int *memtype)
   *memtype=MTRRDefType.TYPE; //if not found, this is the result (usually uncached)
   *fullmap=1;
 
-  sendstringf("getMTRRMapInfo(%6, %x)\n", startaddress, size);
+ // sendstringf("getMTRRMapInfo(%6, %x)\n", startaddress, size);
 
 
   //csEnter(&memoryrangesCS); //currently addToMemoryRanges is only called BEFORE ept exceptions happen. So this cs is not neede
@@ -4185,7 +4274,7 @@ QWORD EPTMapPhysicalMemory(pcpuinfo currentcpuinfo, QWORD physicalAddress, int f
 
    //memtype=0;
 
-    sendstringf("mapping %6 as a 4KB page with memtype %d\n", physicalAddress & MAXPHYADDRMASKPB, memtype);
+    //sendstringf("mapping %6 as a 4KB page with memtype %d\n", physicalAddress & MAXPHYADDRMASKPB, memtype);
     *(QWORD*)(&pagetable[pagetableindex])=physicalAddress & MAXPHYADDRMASKPB;
     pagetable[pagetableindex].RA=1;
     pagetable[pagetableindex].WA=1;
@@ -4195,7 +4284,7 @@ QWORD EPTMapPhysicalMemory(pcpuinfo currentcpuinfo, QWORD physicalAddress, int f
   else
   {
     //else already mapped
-    sendstringf("This physical address (%6) was already mapped\n", physicalAddress);
+    //sendstringf("This physical address (%6) was already mapped\n", physicalAddress);
 
     //change it to full access
     pagetable[pagetableindex].RA=1;

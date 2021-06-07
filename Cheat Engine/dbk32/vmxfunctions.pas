@@ -100,6 +100,8 @@ const
   VMCALL_SETBROKENTHREADENTRYFULL=77;
   VMCALL_RESUMEBROKENTHREAD=78;
 
+  VMCALL_HIDEDBVMPHYSICALADDRESSES=79;
+  VMCALL_HIDEDBVMPHYSICALADDRESSESALL=80;
 
   VMCALL_DEBUG_SETSPINLOCKTIMEOUT=254;
 
@@ -505,6 +507,9 @@ procedure dbvm_returntousermode(originalstate: POriginalState);
 function dbvm_kernelalloc(size: dword): pointer;
 function dbvm_copyMemory(destination, target: pointer; size: integer): boolean;
 
+procedure dbvm_hidephysicalmemory;
+procedure dbvm_hidephysicalmemoryall;
+
 //got lost since last harddisk crash. Not 'that' important, but will take a while to reimplement
 function dbvm_executeDriverEntry(driverentry: pointer; DriverObject: pointer; RegistryPath: pointer): integer;
 
@@ -899,7 +904,8 @@ begin
     mov r,rax
 {$else}
     mov eax,vmcallinfo
-    mov edx,level1pass
+    mov edx,[vmx_password1]
+    mov ecx,[vmx_password3]
     vmmcall     //should raise an UD if the cpu does not support it  (or the password is wrong)
     mov r,eax
 {$endif}
@@ -932,7 +938,8 @@ begin
     mov r,rax
 {$else}
     mov eax,vmcallinfo
-    mov edx,level1pass
+    mov edx,[vmx_password1]
+    mov ecx,[vmx_password3]
     vmmcall     //should raise an UD if the cpu does not support it  (or the password is wrong)
     mov r,eax
     mov r2,edx
@@ -970,7 +977,8 @@ begin
     mov r,rax
 {$else}
     mov eax,vmcallinfo
-    mov edx,level1pass
+    mov edx,[vmx_password1]
+    mov ecx,[vmx_password3]
     vmcall     //should raise an UD if the cpu does not support it  (or the password is wrong)
     mov r,eax
     mov r2,edx
@@ -1006,8 +1014,8 @@ begin
     mov r,rax
 {$else}
     mov eax,vmcallinfo
-    mov edx,level1pass
-    mov ecx,level3pass
+    mov edx,[vmx_password1]
+    mov ecx,[vmx_password3]
     vmcall     //should raise an UD if the cpu does not support it  (or the password is wrong)
     mov r,eax
 {$endif}
@@ -2378,7 +2386,7 @@ end;
 
 function dbvm_log_cr3values_start: boolean;
 begin
-  foreachcpu(dbvm_log_cr3_start,nil);
+  result:=foreachcpu(dbvm_log_cr3_start,nil);
 end;
 
 function dbvm_log_cr3_fullstop(parameters: pointer): BOOL; stdcall;   //needed to stop the cr3 watch on the other cpus
@@ -3175,6 +3183,31 @@ begin
   result:=r;
 end;
 
+procedure dbvm_hidephysicalmemory;
+var vmcallinfo: packed record
+  structsize: dword;
+  level2pass: dword;
+  command: dword;
+end;
+begin
+  vmcallinfo.structsize:=sizeof(vmcallinfo);
+  vmcallinfo.level2pass:=vmx_password2;
+  vmcallinfo.command:=VMCALL_HIDEDBVMPHYSICALADDRESSES;
+  vmcall(@vmcallinfo);
+end;
+
+procedure dbvm_hidephysicalmemoryall;
+var vmcallinfo: packed record
+  structsize: dword;
+  level2pass: dword;
+  command: dword;
+end;
+begin
+  vmcallinfo.structsize:=sizeof(vmcallinfo);
+  vmcallinfo.level2pass:=vmx_password2;
+  vmcallinfo.command:=VMCALL_HIDEDBVMPHYSICALADDRESSESALL;
+  vmcall(@vmcallinfo);
+end;
 
 
 function getClientIDFromDBVMBPShortState(state: TDBVMBPShortState; out clientid: TClientID): boolean;

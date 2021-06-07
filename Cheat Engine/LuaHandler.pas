@@ -43,6 +43,8 @@ threadvar
   Thread_LuaVM: PLua_State;
   Thread_LuaRef: integer;
 
+
+
 function lua_strtofloat(s: string): double;
 function lua_strtoint(s: string): integer;
 
@@ -126,7 +128,7 @@ uses autoassembler, MainUnit, MainUnit2, LuaClass, frmluaengineunit, plugin, plu
   LuaDiagram, frmUltimap2Unit, frmcodefilterunit, BreakpointTypeDef, LuaSyntax,
   LazLogger, LuaSynedit, LuaRIPRelativeScanner, LuaCustomImageList ,ColorBox,
   rttihelper, LuaDotNetPipe, LuaRemoteExecutor, windows7taskbar, debugeventhandler,
-  tcclib, dotnethost, CSharpCompiler, LuaCECustomButton;
+  tcclib, dotnethost, CSharpCompiler, LuaCECustomButton, feces;
 
   {$warn 5044 off}
 
@@ -162,6 +164,10 @@ var
   waitforsymbols: boolean=true;
 
   autorunpath: string;
+
+threadvar
+  luadisassembler: TDisassembler; //so lua threads do not interfere with the mainthread disassembler
+
 
 
 function lua_oldprintoutput:TStrings;
@@ -4964,25 +4970,33 @@ var parameters: integer;
   address: string;
   donotsave: boolean;
 begin
-  result:=0;
+  result:=1;
 
   parameters:=lua_gettop(L);
   if (parameters>=2) then
   begin
-    symbolname:=Lua_ToString(L, -parameters);
-    if lua_isstring(L, -parameters+1) then
-      address:=lua_tostring(L,-parameters+1)
+    symbolname:=Lua_ToString(L, 1);
+    if lua_isstring(L, 2) then
+      address:=lua_tostring(L,2)
     else
-      address:=IntToHex(lua_tointeger(L,-parameters+1),1);
+      address:=IntToHex(lua_tointeger(L,2),1);
 
 
-    donotsave:=(parameters>=3) and (lua_toboolean(L, -parameters+2));
+    donotsave:=(parameters>=3) and (lua_toboolean(L, 3));
 
-
-    symhandler.AddUserdefinedSymbol(address, symbolname, donotsave);
+    try
+      symhandler.DeleteUserdefinedSymbol(symbolname);
+      symhandler.AddUserdefinedSymbol(address, symbolname, donotsave);
+      lua_pushboolean(L,true);
+    except
+      on e: exception do
+      begin
+        lua_pushboolean(L,false);
+        lua_pushstring(L,e.message);
+        result:=2;
+      end;
+    end;
   end;
-
-  lua_pop(L, lua_gettop(L));
 end;
 
 function unregisterSymbol(L: Plua_State): integer; cdecl;
@@ -4994,7 +5008,7 @@ begin
   parameters:=lua_gettop(L);
   if (parameters=1) then
   begin
-    symbolname:=Lua_ToString(L, -1);
+    symbolname:=Lua_ToString(L, 1);
     symhandler.DeleteUserdefinedSymbol(symbolname);
   end;
 
@@ -7048,6 +7062,18 @@ begin
   result:=1;
 end;
 
+function lua_dbvm_hidephysicalmemory(L: PLua_State): integer; cdecl;
+begin
+  result:=0;
+  dbvm_hidephysicalmemory;
+end;
+
+function lua_dbvm_hidephysicalmemoryall(L: PLua_State): integer; cdecl;
+begin
+  result:=0;
+  dbvm_hidephysicalmemoryall;
+end;
+
 
 function lua_dbvm_bp_getBrokenThreadListSize(L: PLua_State): integer; cdecl;
 begin
@@ -7815,6 +7841,7 @@ end;
 function getInstructionSize(L: PLua_State): integer; cdecl;
 var parameters: integer;
   address, address2: ptruint;
+  d: TDisassembler;
 begin
   result:=0;
   parameters:=lua_gettop(L);
@@ -7825,7 +7852,11 @@ begin
     lua_pop(L, parameters);
 
     address2:=address;
-    disassemble(address);
+
+
+    d:=TDisassembler.create;
+    d.disassemble(address);
+    d.free;
     lua_pushinteger(L, address-address2);
     result:=1;
   end
@@ -7836,6 +7867,7 @@ end;
 function getPreviousOpcode(L: PLua_State): integer; cdecl;
 var parameters: integer;
   address, address2: ptruint;
+  d: TDisassembler;
 begin
   result:=0;
   parameters:=lua_gettop(L);
@@ -7845,7 +7877,9 @@ begin
 
     lua_pop(L, parameters);
 
-    lua_pushinteger(L, previousopcode(address));
+    d:=TDisassembler.create;
+    lua_pushinteger(L, previousopcode(address,d));
+    d.free;
     result:=1;
   end
   else
@@ -9076,6 +9110,44 @@ begin
     end;
 
   end;
+end;
+
+function lua_signTable(L: Plua_State): integer; cdecl;
+var
+  filename: string;
+begin
+  if lua_gettop(L)>0 then
+  begin
+    filename:=Lua_ToString(L,1);
+    if FileExists(filename) then
+    begin
+      try
+        signTableFile(filename);
+        lua_pushboolean(L,true);
+        exit(1);
+      except
+        on e: exception do
+        begin
+          lua_pushboolean(L,false);
+          lua_pushstring(L,e.message);
+          exit(2);
+        end;
+      end;
+    end
+    else
+    begin
+      lua_pushboolean(L,false);
+      lua_pushstring(L,filename+' not found');
+      exit(2);
+    end;
+  end
+  else
+  begin
+    lua_pushboolean(L,false);
+    lua_pushstring(L, rsIncorrectNumberOfParameters);
+    exit(2);
+  end;
+
 end;
 
 function lua_detachIfPossible(L: Plua_State): integer; cdecl;
@@ -12299,6 +12371,9 @@ var
 
   ca: ptruint;
   x: string;
+
+  d: TDisassembler;
+
 begin
   result:=0;
   if lua_gettop(L)>=1 then
@@ -12311,10 +12386,15 @@ begin
       //no codesize given, calculate the number of bytes needed to put a 5 byte jmp in here. (make sure to use 3th alloc param, bitch please if you don't)
       codesize:=0;
       ca:=address;
+
+      d:=TDisassembler.create;
+
       while (ca-address)<5 do
-        disassemble(ca,x);
+        d.disassemble(ca,x);
 
       codesize:=ca-address;
+
+      d.free;
     end;
 
     if address<>0 then
@@ -14663,6 +14743,11 @@ begin
   end;
 end;
 
+function lua_darkMode(L: Plua_State): integer; cdecl;
+begin
+  result:=1;
+  lua_pushboolean(L, ShouldAppsUseDarkMode);
+end;
 
 function lua_getNextReadablePageCR3(L: Plua_State): integer; cdecl;
 var
@@ -14775,6 +14860,8 @@ begin
   lua_register(L, 'inMainThread', inMainThread);
   lua_register(L, 'synchronize', lua_synchronize);
   lua_register(L, 'queue', lua_queue);
+
+  initializeLuaDisassembler(L);
 end;
 
 procedure InitializeLua;
@@ -15134,6 +15221,8 @@ begin
     lua_register(L, 'dbvm_disableTSCHook', lua_dbvm_disableTSCHook);
 
     lua_register(L, 'dbvm_findCR3', lua_dbvm_findCR3);
+    lua_register(L, 'dbvm_hidephysicalmemory', lua_dbvm_hidephysicalmemory);
+    lua_register(L, 'dbvm_hidephysicalmemoryall', lua_dbvm_hidephysicalmemoryall);
 
     lua_register(L, 'getPageInfoCR3', lua_getPageInfoCR3);
     lua_register(L, 'getNextReadablePageCR3', lua_getNextReadablePageCR3);
@@ -15240,6 +15329,8 @@ begin
 
     Lua_register(L, 'loadTable', lua_loadTable);
     Lua_register(L, 'saveTable', lua_saveTable);
+    Lua_register(L, 'signTable', lua_signTable);
+
     Lua_register(L, 'detachIfPossible', lua_DetachIfPossible);
     Lua_register(L, 'getComment', getComment);
     Lua_register(L, 'setComment', setComment);
@@ -15475,6 +15566,9 @@ begin
 
     lua_register(L, 'signExtend', lua_signExtend);
 
+    lua_register(L, 'darkMode', lua_darkMode);
+
+
 
 
     initializeLuaRemoteThread;
@@ -15494,7 +15588,7 @@ begin
     initializeLuaD3DHook;
     initializeLuaStructure;
     initializeLuaRegion;
-    initializeLuaDisassembler;
+    initializeLuaDisassembler(L);
     initializeLuaDissectCode;
     initializeLuaByteTable;
     initializeLuaBinary;
@@ -15694,6 +15788,9 @@ begin
 
   if assigned(oldReleaseThreadVars) then
     oldReleaseThreadVars();
+
+  if luadisassembler<>nil then
+    freeandnil(luadisassembler);
 end;
 
 initialization

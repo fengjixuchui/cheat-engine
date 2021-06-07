@@ -2424,6 +2424,9 @@ var
   usableDebugReg: integer;
   bplist: TBreakpointSplitArray;
 begin
+  if CurrentDebuggerInterface is TDBVMDebugInterface then
+    bpm:=bpmDBVMNative;
+
   found := False;
 
   result:=nil;
@@ -2454,7 +2457,6 @@ begin
       end;
     end
     else
-    if bpm=bpmException then
       result:=AddBreakpoint(nil, address, size, bptWrite, bpm, bo_Break, -1, nil,0,nil,nil,0,nil, OnBreakpoint);
 
 
@@ -2479,6 +2481,9 @@ var
   usableDebugReg: integer;
   bplist: TBreakpointSplitArray;
 begin
+  if CurrentDebuggerInterface is TDBVMDebugInterface then
+    bpm:=bpmDBVMNative;
+
   found := False;
 
   result:=nil;
@@ -2508,7 +2513,6 @@ begin
       end;
     end
     else
-    if bpm=bpmException then
       result:=AddBreakpoint(nil, address, size, bptAccess, bpm, bo_Break,-1,nil,0,nil,nil,0,nil,OnBreakpoint);
 
   finally

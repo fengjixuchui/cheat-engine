@@ -6,6 +6,7 @@
 
 //#define DELAYEDSERIAL
 
+//#define USENMIFORWAIT
 #define AMDNP  //enable AMD nested paging support
 
 #ifdef DELAYEDSERIAL
@@ -159,7 +160,8 @@ typedef union
 //extern void outportb(UINT64 port, UINT64 value);
 
 void bochsbp(void);
-void jtagbp(void);
+
+#define jtagbp() asm volatile (".byte 0xf1");
 
 /* Input a byte from a port */
 unsigned char inportb(unsigned int port);
@@ -190,7 +192,9 @@ void printchar(char c, int x, int y, char foreground, char background);
 void printstring(char *s, int x, int y, char foreground, char background);
 void sendchar(char c);
 
-extern void enableserial(void);
+extern void _enableserial(void);
+
+void enableserial(void);
 
 
 

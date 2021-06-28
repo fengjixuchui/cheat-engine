@@ -428,19 +428,22 @@ happened, and the breakpoints have already been disabled
 idle can be false if called from a thread that needed to clear it's breakpoint from an deleted breakpoint
 }
 var
-  i: integer;
+  i,j: integer;
   bp: PBreakpoint;
   deleted: boolean;
   updated: boolean;
 begin
-
+  execlocation:=500;
   i:=0;
   updated:=false;
   debuggercs.enter;
   try
+    execlocation:=501;
     while i<Breakpointlist.Count do
     begin
+      execlocation:=502;
       deleted:=false;
+
 
       bp:=PBreakpoint(breakpointlist[i]);
       if bp^.markedfordeletion then
@@ -454,22 +457,27 @@ begin
               outputdebugstring('cleanupDeletedBreakpoints: deleting bp');
               breakpointlist.Delete(i);
 
-              if (bp^.FoundcodeDialog<>nil) then
+              if (bp^.owner=nil) then
               begin
-                //the foundcode dialog was closed(refcount=0), so can be deleted now
-                GUIObjectToFree:=bp^.FoundcodeDialog;
-                Synchronize(sync_FreeGUIObject);
+                if (bp^.FoundcodeDialog<>nil) then
+                begin
+                  //the foundcode dialog was closed(refcount=0), so can be deleted now
+                  GUIObjectToFree:=bp^.FoundcodeDialog;
+                  Synchronize(sync_FreeGUIObject);
 
-                bp^.FoundcodeDialog:=nil;
+                  bp^.FoundcodeDialog:=nil;
+                end;
+
+                if (bp^.frmchangedaddresses<>nil) then
+                begin
+                  GUIObjectToFree:=bp^.frmchangedaddresses;
+                  Synchronize(sync_FreeGUIObject);
+                  bp^.frmchangedaddresses:=nil;
+                end;
               end;
 
-              if (bp^.frmchangedaddresses<>nil) then
-              begin
-                GUIObjectToFree:=bp^.frmchangedaddresses;
-                Synchronize(sync_FreeGUIObject);
 
-                bp^.frmchangedaddresses:=nil;
-              end;
+
 
               if bp^.conditonalbreakpoint.script<>nil then
                 StrDispose(bp^.conditonalbreakpoint.script);
@@ -779,6 +787,8 @@ end;
 
 begin
   //issue: If a breakpoint is being handled and this is called, dr6 gets reset to 0 in windows 7, making it impossible to figure out what caused the breakpoint
+
+  if breakpoint^.markedfordeletion then exit;
 
   if CurrentDebuggerInterface is TDBVMDebugInterface then
     breakpoint^.breakpointMethod:=bpmDBVMNative;
@@ -1350,6 +1360,9 @@ begin
         bp^.markedfordeletion := True; //set this flag so it gets deleted on next no-event
         bp^.deletetickcount:=GetTickCount;
 
+        bp^.FoundcodeDialog:=nil;
+        bp^.frmTracer:=nil;
+        bp^.frmchangedaddresses:=nil;
 
       end
     end;
@@ -2715,8 +2728,8 @@ var
   i: integer;
   Result: TWaitResult;
   mresult: TModalResult;
-  starttime: dword;
-  currentloopstarttime: dword;
+  starttime: qword;
+  currentloopstarttime: qword;
   timeout: dword;
 
   userWantsToAttach: boolean;
@@ -2724,6 +2737,8 @@ var
   frmDebuggerAttachTimeout: TfrmDebuggerAttachTimeout;
 
   seconds: dword;
+
+  currenttime: qword;
 begin
 
 
@@ -2750,8 +2765,8 @@ begin
     while (gettickcount64-starttime)<=timeout do
     begin
 
-      currentloopstarttime:=GetTickCount;
-      while CheckSynchronize and ((GetTickCount-currentloopstarttime)<50) do
+      currentloopstarttime:=GetTickCount64;
+      while CheckSynchronize and ((GetTickCount64-currentloopstarttime)<50) do
       begin
         OutputDebugString('After CheckSynchronize');
         //synchronize for 50 milliseconds long
@@ -2762,6 +2777,14 @@ begin
 
       if result=wrSignaled then break;
     end;
+
+    currenttime:=GetTickCount64;
+
+    if (currenttime-starttime)<timeout then
+    asm
+    nop
+    end;
+
 
     if result<>wrSignaled then
     begin
@@ -2846,6 +2869,7 @@ end;
 procedure TDebuggerthread.sync_FreeGUIObject;
 begin
   GUIObjectToFree.Free;
+  GUIObjectToFree:=nil;
 end;
 
 procedure TDebuggerthread.defaultConstructorcode;

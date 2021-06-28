@@ -137,6 +137,11 @@ typedef struct _vmxhoststate //structure for easy management of hoststates
 
   QWORD RSP; //0x6c14
   QWORD RIP; //0x6c16
+
+  QWORD IA32_S_CET; //0x6c18
+  QWORD SSP; //0x6c1a
+  QWORD IA32_INTERRUPT_SSP_TABLE_ADDR; //0x6c1c
+  QWORD IA32_PKRS; //0x2c06
 } vmxhoststate, *pvmxhoststate;
 
 
@@ -393,6 +398,8 @@ typedef struct _singlestepreason
   void* Data; //pointer to the object for this reason (watchlist, cloaklist, changeregonbplist)
 } SingleStepReason, *PSingleStepReason;
 
+typedef void(*NMICallBack)(void* self);
+
 typedef volatile struct tcpuinfo
 {
   volatile struct tcpuinfo *self; //pointer to itself (must be offset 0)
@@ -579,10 +586,21 @@ typedef volatile struct tcpuinfo
     int insideVMXRootMode;
     QWORD guest_vmxonaddress;
     QWORD guest_activeVMCS; //the VMCS the guest thinks it is. (usually the same with some modification)
-    //saved hoststate (used by handleByGuest)
+
+
+    struct
+    {
+      QWORD VMCS_PhysicalAddress;
+      DWORD *VMCS_VirtualAddress;
+      //actual address in case I make a real shadow copy
+    } mappedVMCSBlocks[10];
+    int mappedVMCSBlocks_nextIndex; //index % 10.  If not found and no free one is left, use this entry to pick one to free and then increment with 1
+
+
+
 
     int currenterrorcode; //if not 0, return this errorcode on vmread
-    vmxhoststate originalhoststate;
+    vmxhoststate originalhoststate;  //saved hoststate (used by emulateVMExit)
     vmxhoststate dbvmhoststate;
     int runningvmx; //1 if the previous call was a vmlaunch/vmresume and no vmexit happened yet
 
@@ -636,7 +654,16 @@ typedef volatile struct tcpuinfo
   } SwitchKernel;
 
   int LastVMCall;
+  int LastVMCallDebugPos;
   int insideHandler;
+
+  DWORD lastExitReason;
+  int lastExitWasWithRunningVMX;
+
+#ifdef USENMIFORWAIT
+  int WaitTillDone;
+  int WaitingTillDone;
+#endif
 
 } tcpuinfo, *pcpuinfo; //allocated when the number of cpu's is known
 
@@ -726,6 +753,11 @@ typedef struct _regCR4
 #define CR0_PG          (1<<31)
 
 
+#define EFER_LME        (1<<8)
+#define EFER_LMA        (1<<10)
+
+
+
 typedef struct _regDR6
 {
   union{
@@ -804,6 +836,8 @@ TIA32_VMX_MISC IA32_VMX_MISC;
 
 extern void SaveExtraHostState(UINT64 VMCB_PA);
 
+char * getVMExitReassonString(void);
+
 void CheckGuest(void);
 void displayVMmemory(pcpuinfo currentcpuinfo);
 void displayPhysicalMemory();
@@ -814,6 +848,7 @@ int vmexit(tcpuinfo *cpu, UINT64 *registers, void *fxsave);
 int vmexit_amd(pcpuinfo currentcpuinfo, UINT64 *registers, void *fxsave);
 
 void sendvmstate(pcpuinfo currentcpuinfo, VMRegisters *registers);
+void sendvmstateFull(pcpuinfo currentcpuinfo UNUSED, VMRegisters *registers UNUSED);
 char *getVMInstructionErrorString(void);
 
 void ShowCurrentInstruction(pcpuinfo currentcpuinfo);
@@ -833,6 +868,7 @@ extern volatile DWORD initcs;
 
 int APStartsInSIPI;
 extern pcpuinfo getcpuinfo();
+
 
 
 typedef BOOL DBVM_PLUGIN_EXIT_PRE(PDBVMExports exports, pcpuinfo currentcpuinfo, void *registers, void *fxsave);
